@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const sequelize = require("./config/database");
+const User = require("./models/User");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,8 @@ async function startServer() {
   try {
     await sequelize.authenticate();
     console.log("Connected to PostgreSQL!");
+    await sequelize.sync();
+    console.log("Database tables synchronized!");
 
     app.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
