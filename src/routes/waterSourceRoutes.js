@@ -30,6 +30,55 @@ router.post("/", requireAuth, async (request, response) => {
       });
     }
 
+    const allowedSourceTypes = [
+      "spring",
+      "creek",
+      "lake",
+      "seasonal",
+      "tank",
+    ];
+
+    const allowedFlowRatings = [
+      "dry",
+      "trickle",
+      "moderate",
+      "strong",
+    ];
+
+    if (latitude < -90 || latitude > 90) {
+      return response.status(400).json({
+        message: "Latitude must be between -90 and 90.",
+      });
+    }
+
+    if (longitude < -180 || longitude > 180) {
+      return response.status(400).json({
+        message: "Longitude must be between -180 and 180.",
+      });
+    }
+
+    if (!allowedSourceTypes.includes(sourceType)) {
+      return response.status(400).json({
+        message:
+          "Source type must be spring, creek, lake, seasonal, or tank.",
+      });
+    }
+
+    if (!allowedFlowRatings.includes(flowRating)) {
+      return response.status(400).json({
+        message:
+          "Flow rating must be dry, trickle, moderate, or strong.",
+      });
+    }
+
+    const parsedDate = new Date(lastConfirmedDate);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return response.status(400).json({
+        message: "Last confirmed date must be a valid date.",
+      });
+    }
+
     const entry = await WaterSourceEntry.create({
       userId: request.user.userId,
       latitude,
@@ -51,132 +100,6 @@ router.post("/", requireAuth, async (request, response) => {
 
     response.status(500).json({
       message: "Something went wrong while creating the water source entry.",
-    });
-  }
-});
-
-router.get("/", requireAuth, async (request, response) => {
-  try {
-    const entries = await WaterSourceEntry.findAll({
-      where: {
-        userId: request.user.userId,
-      },
-      order: [["createdAt", "DESC"]],
-    });
-
-    response.status(200).json({
-      count: entries.length,
-      entries,
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while loading water source entries.",
-    });
-  }
-});
-router.get("/:id", requireAuth, async (request, response) => {
-  try {
-    const entry = await WaterSourceEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
-
-    if (!entry) {
-      return response.status(404).json({
-        message: "Water source entry not found.",
-      });
-    }
-
-    response.status(200).json({
-      entry,
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while loading the water source entry.",
-    });
-  }
-});
-router.put("/:id", requireAuth, async (request, response) => {
-  try {
-    const entry = await WaterSourceEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
-
-    if (!entry) {
-      return response.status(404).json({
-        message: "Water source entry not found.",
-      });
-    }
-
-    const {
-      latitude,
-      longitude,
-      elevation,
-      sourceType,
-      flowRating,
-      lastConfirmedDate,
-      potabilityNotes,
-      notes,
-    } = request.body;
-
-    await entry.update({
-      latitude: latitude ?? entry.latitude,
-      longitude: longitude ?? entry.longitude,
-      elevation: elevation ?? entry.elevation,
-      sourceType: sourceType ?? entry.sourceType,
-      flowRating: flowRating ?? entry.flowRating,
-      lastConfirmedDate: lastConfirmedDate ?? entry.lastConfirmedDate,
-      potabilityNotes: potabilityNotes ?? entry.potabilityNotes,
-      notes: notes ?? entry.notes,
-    });
-
-    response.status(200).json({
-      message: "Water source entry updated successfully!",
-      entry,
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while updating the water source entry.",
-    });
-  }
-});
-
-router.delete("/:id", requireAuth, async (request, response) => {
-  try {
-    const entry = await WaterSourceEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
-
-    if (!entry) {
-      return response.status(404).json({
-        message: "Water source entry not found.",
-      });
-    }
-
-    await entry.destroy();
-
-    response.status(200).json({
-      message: "Water source entry deleted successfully!",
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while deleting the water source entry.",
     });
   }
 });
