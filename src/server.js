@@ -8,6 +8,7 @@ const CatholeEntry = require("./models/CatholeEntry");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const catholeRoutes = require("./routes/catholeRoutes");
+const WaterSourceEntry = require("./models/WaterSourceEntry");
 
 app.use(express.json());
 app.use("/api/catholes", catholeRoutes);
