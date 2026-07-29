@@ -3,11 +3,14 @@ require("dotenv").config();
 const express = require("express");
 const sequelize = require("./config/database");
 const User = require("./models/User");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+app.use("/api/auth", authRoutes);
 
 app.get("/", (request, response) => {
   response.send("Altipoop API Running!");
