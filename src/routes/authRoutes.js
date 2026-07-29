@@ -51,5 +51,55 @@ router.post("/register", async (request, response) => {
     });
   }
 });
+router.post("/login", async (request, response) => {
+  try {
+    const { email, password } = request.body;
+
+    if (!email || !password) {
+      return response.status(400).json({
+        message: "Email and password are required.",
+      });
+    }
+
+    const user = await User.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      return response.status(401).json({
+        message: "Invalid email or password.",
+      });
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      password,
+      user.passwordHash
+    );
+
+    if (!passwordMatches) {
+      return response.status(401).json({
+        message: "Invalid email or password.",
+      });
+    }
+
+    response.status(200).json({
+      message: "Login successful!",
+      user: {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        homeRegion: user.homeRegion,
+        privacySetting: user.privacySetting,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while logging in.",
+    });
+  }
+});
+
 
 module.exports = router;
