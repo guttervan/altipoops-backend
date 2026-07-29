@@ -76,4 +76,30 @@ router.get("/", requireAuth, async (request, response) => {
     });
   }
 });
+router.get("/:id", requireAuth, async (request, response) => {
+  try {
+    const entry = await WaterSourceEntry.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!entry) {
+      return response.status(404).json({
+        message: "Water source entry not found.",
+      });
+    }
+
+    response.status(200).json({
+      entry,
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while loading the water source entry.",
+    });
+  }
+});
 module.exports = router;
