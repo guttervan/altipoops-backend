@@ -151,4 +151,33 @@ router.put("/:id", requireAuth, async (request, response) => {
     });
   }
 });
+
+router.delete("/:id", requireAuth, async (request, response) => {
+  try {
+    const entry = await WaterSourceEntry.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!entry) {
+      return response.status(404).json({
+        message: "Water source entry not found.",
+      });
+    }
+
+    await entry.destroy();
+
+    response.status(200).json({
+      message: "Water source entry deleted successfully!",
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while deleting the water source entry.",
+    });
+  }
+});
 module.exports = router;
