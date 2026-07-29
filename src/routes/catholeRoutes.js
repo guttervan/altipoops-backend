@@ -59,5 +59,25 @@ router.post("/", requireAuth, async (request, response) => {
     });
   }
 });
+router.get("/", requireAuth, async (request, response) => {
+  try {
+    const entries = await CatholeEntry.findAll({
+      where: {
+        userId: request.user.userId,
+      },
+      order: [["createdAt", "DESC"]],
+    });
 
+    response.status(200).json({
+      count: entries.length,
+      entries,
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while loading cathole entries.",
+    });
+  }
+});
 module.exports = router;
