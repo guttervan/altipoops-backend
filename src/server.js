@@ -7,9 +7,10 @@ const authRoutes = require("./routes/authRoutes");
 const CatholeEntry = require("./models/CatholeEntry");
 const app = express();
 const PORT = process.env.PORT || 3000;
+const catholeRoutes = require("./routes/catholeRoutes");
 
 app.use(express.json());
-
+app.use("/api/catholes", catholeRoutes);
 app.use("/api/auth", authRoutes);
 
 app.get("/", (request, response) => {
