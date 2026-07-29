@@ -107,4 +107,65 @@ router.get("/:id", requireAuth, async (request, response) => {
     });
   }
 });
+
+router.put("/:id", requireAuth, async (request, response) => {
+  try {
+    const entry = await CatholeEntry.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!entry) {
+      return response.status(404).json({
+        message: "Cathole entry not found.",
+      });
+    }
+
+    const {
+      latitude,
+      longitude,
+      elevation,
+      terrainType,
+      method,
+      distanceFromWater,
+      distanceFromTrail,
+      distanceFromCamp,
+      depthConfirmed,
+      tpPackedOut,
+      notes,
+    } = request.body;
+
+    await entry.update({
+      latitude: latitude ?? entry.latitude,
+      longitude: longitude ?? entry.longitude,
+      elevation: elevation ?? entry.elevation,
+      terrainType: terrainType ?? entry.terrainType,
+      method: method ?? entry.method,
+      distanceFromWater:
+        distanceFromWater ?? entry.distanceFromWater,
+      distanceFromTrail:
+        distanceFromTrail ?? entry.distanceFromTrail,
+      distanceFromCamp:
+        distanceFromCamp ?? entry.distanceFromCamp,
+      depthConfirmed:
+        depthConfirmed ?? entry.depthConfirmed,
+      tpPackedOut:
+        tpPackedOut ?? entry.tpPackedOut,
+      notes: notes ?? entry.notes,
+    });
+
+    response.status(200).json({
+      message: "Cathole entry updated successfully!",
+      entry,
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while updating the cathole entry.",
+    });
+  }
+});
 module.exports = router;
