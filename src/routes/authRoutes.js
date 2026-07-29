@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
+const requireAuth = require("../middleware/authMiddleware");
 
 router.post("/register", async (request, response) => {
   try {
@@ -113,5 +114,30 @@ response.status(200).json({
   }
 });
 
+router.get("/me", requireAuth, async (request, response) => {
+  try {
+    const user = await User.findByPk(request.user.userId, {
+      attributes: {
+        exclude: ["passwordHash"],
+      },
+    });
+
+    if (!user) {
+      return response.status(404).json({
+        message: "User not found.",
+      });
+    }
+
+    response.status(200).json({
+      user,
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while loading the user.",
+    });
+  }
+});
 
 module.exports = router;
