@@ -140,4 +140,61 @@ router.get("/me", requireAuth, async (request, response) => {
   }
 });
 
+router.put("/me", requireAuth, async (request, response) => {
+  try {
+    const user = await User.findByPk(request.user.userId);
+
+    if (!user) {
+      return response.status(404).json({
+        message: "User not found.",
+      });
+    }
+
+    const {
+      displayName,
+      homeRegion,
+      privacySetting,
+    } = request.body;
+
+    const allowedPrivacySettings = [
+      "private",
+      "friends",
+      "public",
+    ];
+
+    if (
+      privacySetting !== undefined &&
+      !allowedPrivacySettings.includes(privacySetting)
+    ) {
+      return response.status(400).json({
+        message:
+          "Privacy setting must be private, friends, or public.",
+      });
+    }
+
+    await user.update({
+      displayName: displayName ?? user.displayName,
+      homeRegion: homeRegion ?? user.homeRegion,
+      privacySetting:
+        privacySetting ?? user.privacySetting,
+    });
+
+    response.status(200).json({
+      message: "Profile updated successfully!",
+      user: {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        homeRegion: user.homeRegion,
+        privacySetting: user.privacySetting,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(500).json({
+      message: "Something went wrong while updating the profile.",
+    });
+  }
+});
 module.exports = router;
