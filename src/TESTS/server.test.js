@@ -190,4 +190,61 @@ describe("Altipoop API", () => {
     expect(response.body.entry.terrainType).toBe("alpine");
     expect(response.body.entry.method).toBe("cathole");
   });
+
+  test("PUT /api/catholes/:id rejects invalid updates", async () => {
+    const response = await request(app)
+      .put(`/api/catholes/${catholeEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        terrainType: "volcano",
+      });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      message:
+        "Terrain type must be forest, desert, alpine, snow, or other.",
+    });
+  });
+
+  test("PUT /api/catholes/:id updates a cathole entry", async () => {
+    const response = await request(app)
+      .put(`/api/catholes/${catholeEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        terrainType: "forest",
+        notes: "Updated automated cathole test entry.",
+      });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.message).toBe(
+      "Cathole entry updated successfully!"
+    );
+    expect(response.body.entry.id).toBe(catholeEntryId);
+    expect(response.body.entry.terrainType).toBe("forest");
+    expect(response.body.entry.notes).toBe(
+      "Updated automated cathole test entry."
+    );
+  });
+
+  test("DELETE /api/catholes/:id deletes a cathole entry", async () => {
+    const response = await request(app)
+      .delete(`/api/catholes/${catholeEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      message: "Cathole entry deleted successfully!",
+    });
+  });
+
+  test("GET deleted cathole entry returns 404", async () => {
+    const response = await request(app)
+      .get(`/api/catholes/${catholeEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({
+      message: "Cathole entry not found.",
+    });
+  });
 });
