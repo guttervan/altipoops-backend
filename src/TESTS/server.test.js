@@ -3,12 +3,14 @@ const app = require("../server");
 const sequelize = require("../config/database");
 const User = require("../models/User");
 const CatholeEntry = require("../models/CatholeEntry");
+const WaterSourceEntry = require("../models/WaterSourceEntry");
 
 describe("Altipoop API", () => {
   let authToken;
   let testUserEmail;
   let testUserId;
   let catholeEntryId;
+  let waterSourceEntryId;
 
   beforeAll(async () => {
     testUserEmail = `test-${Date.now()}@example.com`;
@@ -35,6 +37,12 @@ describe("Altipoop API", () => {
 
   afterAll(async () => {
     await CatholeEntry.destroy({
+      where: {
+        userId: testUserId,
+      },
+    });
+
+    await WaterSourceEntry.destroy({
       where: {
         userId: testUserId,
       },
@@ -245,6 +253,119 @@ describe("Altipoop API", () => {
     expect(response.statusCode).toBe(404);
     expect(response.body).toEqual({
       message: "Cathole entry not found.",
+    });
+  });
+
+  test("POST /api/water-sources creates a water source entry", async () => {
+    const response = await request(app)
+      .post("/api/water-sources")
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        latitude: 39.7392,
+        longitude: -104.9903,
+        elevation: 9200,
+        sourceType: "spring",
+        flowRating: "moderate",
+        lastConfirmedDate: "2026-07-30",
+        potabilityNotes: "Filter before drinking.",
+        notes: "Automated water source test entry.",
+      });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.body.message).toBe(
+      "Water source entry created successfully!"
+    );
+    expect(response.body.entry).toBeDefined();
+    expect(response.body.entry.sourceType).toBe("spring");
+    expect(response.body.entry.flowRating).toBe("moderate");
+
+    waterSourceEntryId = response.body.entry.id;
+  });
+
+  test("GET /api/water-sources returns the created entry", async () => {
+    const response = await request(app)
+      .get("/api/water-sources")
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.count).toBeGreaterThanOrEqual(1);
+    expect(response.body.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: waterSourceEntryId,
+          sourceType: "spring",
+          flowRating: "moderate",
+          notes: "Automated water source test entry.",
+        }),
+      ])
+    );
+  });
+
+  test("GET /api/water-sources/:id returns one entry", async () => {
+    const response = await request(app)
+      .get(`/api/water-sources/${waterSourceEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.entry.id).toBe(waterSourceEntryId);
+    expect(response.body.entry.sourceType).toBe("spring");
+    expect(response.body.entry.flowRating).toBe("moderate");
+  });
+
+  test("PUT /api/water-sources/:id rejects invalid updates", async () => {
+    const response = await request(app)
+      .put(`/api/water-sources/${waterSourceEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        flowRating: "massive",
+      });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      message:
+        "Flow rating must be dry, trickle, moderate, or strong.",
+    });
+  });
+
+  test("PUT /api/water-sources/:id updates an entry", async () => {
+    const response = await request(app)
+      .put(`/api/water-sources/${waterSourceEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        flowRating: "strong",
+        notes: "Updated automated water source test entry.",
+      });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.message).toBe(
+      "Water source entry updated successfully!"
+    );
+    expect(response.body.entry.id).toBe(waterSourceEntryId);
+    expect(response.body.entry.flowRating).toBe("strong");
+    expect(response.body.entry.notes).toBe(
+      "Updated automated water source test entry."
+    );
+  });
+
+  test("DELETE /api/water-sources/:id deletes an entry", async () => {
+    const response = await request(app)
+      .delete(`/api/water-sources/${waterSourceEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      message: "Water source entry deleted successfully!",
+    });
+  });
+
+  test("GET deleted water source entry returns 404", async () => {
+    const response = await request(app)
+      .get(`/api/water-sources/${waterSourceEntryId}`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({
+      message: "Water source entry not found.",
     });
   });
 });
