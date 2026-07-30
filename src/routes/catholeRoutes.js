@@ -20,9 +20,9 @@ router.post("/", requireAuth, async (request, response) => {
       depthConfirmed,
       tpPackedOut,
       notes,
-    } = request.body;
+    } = request.body || {};
 
-    const validationError = validateCatholeEntry(request.body);
+    const validationError = validateCatholeEntry(request.body || {});
 
     if (validationError) {
       return response.status(400).json({
@@ -58,7 +58,7 @@ router.post("/", requireAuth, async (request, response) => {
   }
 });
 
-router.get("/:id", requireAuth, validateEntryId, async (request, response) => {
+router.get("/", requireAuth, async (request, response) => {
   try {
     const entries = await CatholeEntry.findAll({
       where: {
@@ -80,142 +80,157 @@ router.get("/:id", requireAuth, validateEntryId, async (request, response) => {
   }
 });
 
-router.get("/:id", requireAuth, async (request, response) => {
-  try {
-    const entry = await CatholeEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
+router.get(
+  "/:id",
+  requireAuth,
+  validateEntryId,
+  async (request, response) => {
+    try {
+      const entry = await CatholeEntry.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
 
-    if (!entry) {
-      return response.status(404).json({
-        message: "Cathole entry not found.",
+      if (!entry) {
+        return response.status(404).json({
+          message: "Cathole entry not found.",
+        });
+      }
+
+      response.status(200).json({
+        entry,
+      });
+    } catch (error) {
+      console.error(error);
+
+      response.status(500).json({
+        message: "Something went wrong while loading the cathole entry.",
       });
     }
-
-    response.status(200).json({
-      entry,
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while loading the cathole entry.",
-    });
   }
-});
+);
 
-router.put("/:id", requireAuth, validateEntryId, async (request, response) => {
-  try {
-    const entry = await CatholeEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
+router.put(
+  "/:id",
+  requireAuth,
+  validateEntryId,
+  async (request, response) => {
+    try {
+      const entry = await CatholeEntry.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
 
-    if (!entry) {
-      return response.status(404).json({
-        message: "Cathole entry not found.",
+      if (!entry) {
+        return response.status(404).json({
+          message: "Cathole entry not found.",
+        });
+      }
+
+      const {
+        latitude,
+        longitude,
+        elevation,
+        terrainType,
+        method,
+        distanceFromWater,
+        distanceFromTrail,
+        distanceFromCamp,
+        depthConfirmed,
+        tpPackedOut,
+        notes,
+      } = request.body || {};
+
+      const updatedData = {
+        latitude: latitude ?? entry.latitude,
+        longitude: longitude ?? entry.longitude,
+        terrainType: terrainType ?? entry.terrainType,
+        method: method ?? entry.method,
+        distanceFromWater:
+          distanceFromWater ?? entry.distanceFromWater,
+        distanceFromTrail:
+          distanceFromTrail ?? entry.distanceFromTrail,
+        distanceFromCamp:
+          distanceFromCamp ?? entry.distanceFromCamp,
+      };
+
+      const validationError = validateCatholeEntry(updatedData);
+
+      if (validationError) {
+        return response.status(400).json({
+          message: validationError,
+        });
+      }
+
+      await entry.update({
+        latitude: latitude ?? entry.latitude,
+        longitude: longitude ?? entry.longitude,
+        elevation: elevation ?? entry.elevation,
+        terrainType: terrainType ?? entry.terrainType,
+        method: method ?? entry.method,
+        distanceFromWater:
+          distanceFromWater ?? entry.distanceFromWater,
+        distanceFromTrail:
+          distanceFromTrail ?? entry.distanceFromTrail,
+        distanceFromCamp:
+          distanceFromCamp ?? entry.distanceFromCamp,
+        depthConfirmed:
+          depthConfirmed ?? entry.depthConfirmed,
+        tpPackedOut:
+          tpPackedOut ?? entry.tpPackedOut,
+        notes: notes ?? entry.notes,
+      });
+
+      response.status(200).json({
+        message: "Cathole entry updated successfully!",
+        entry,
+      });
+    } catch (error) {
+      console.error(error);
+
+      response.status(500).json({
+        message: "Something went wrong while updating the cathole entry.",
       });
     }
-
-    const {
-      latitude,
-      longitude,
-      elevation,
-      terrainType,
-      method,
-      distanceFromWater,
-      distanceFromTrail,
-      distanceFromCamp,
-      depthConfirmed,
-      tpPackedOut,
-      notes,
-    } = request.body;
-
-    const updatedData = {
-      latitude: latitude ?? entry.latitude,
-      longitude: longitude ?? entry.longitude,
-      terrainType: terrainType ?? entry.terrainType,
-      method: method ?? entry.method,
-      distanceFromWater:
-        distanceFromWater ?? entry.distanceFromWater,
-      distanceFromTrail:
-        distanceFromTrail ?? entry.distanceFromTrail,
-      distanceFromCamp:
-        distanceFromCamp ?? entry.distanceFromCamp,
-    };
-
-    const validationError = validateCatholeEntry(updatedData);
-
-    if (validationError) {
-      return response.status(400).json({
-        message: validationError,
-      });
-    }
-
-    await entry.update({
-      latitude: latitude ?? entry.latitude,
-      longitude: longitude ?? entry.longitude,
-      elevation: elevation ?? entry.elevation,
-      terrainType: terrainType ?? entry.terrainType,
-      method: method ?? entry.method,
-      distanceFromWater:
-        distanceFromWater ?? entry.distanceFromWater,
-      distanceFromTrail:
-        distanceFromTrail ?? entry.distanceFromTrail,
-      distanceFromCamp:
-        distanceFromCamp ?? entry.distanceFromCamp,
-      depthConfirmed:
-        depthConfirmed ?? entry.depthConfirmed,
-      tpPackedOut:
-        tpPackedOut ?? entry.tpPackedOut,
-      notes: notes ?? entry.notes,
-    });
-
-    response.status(200).json({
-      message: "Cathole entry updated successfully!",
-      entry,
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while updating the cathole entry.",
-    });
   }
-});
+);
 
-router.delete("/:id", requireAuth, validateEntryId, async (request, response) => {
-  try {
-    const entry = await CatholeEntry.findOne({
-      where: {
-        id: request.params.id,
-        userId: request.user.userId,
-      },
-    });
+router.delete(
+  "/:id",
+  requireAuth,
+  validateEntryId,
+  async (request, response) => {
+    try {
+      const entry = await CatholeEntry.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
 
-    if (!entry) {
-      return response.status(404).json({
-        message: "Cathole entry not found.",
+      if (!entry) {
+        return response.status(404).json({
+          message: "Cathole entry not found.",
+        });
+      }
+
+      await entry.destroy();
+
+      response.status(200).json({
+        message: "Cathole entry deleted successfully!",
+      });
+    } catch (error) {
+      console.error(error);
+
+      response.status(500).json({
+        message: "Something went wrong while deleting the cathole entry.",
       });
     }
-
-    await entry.destroy();
-
-    response.status(200).json({
-      message: "Cathole entry deleted successfully!",
-    });
-  } catch (error) {
-    console.error(error);
-
-    response.status(500).json({
-      message: "Something went wrong while deleting the cathole entry.",
-    });
   }
-});
+);
 
 module.exports = router;
