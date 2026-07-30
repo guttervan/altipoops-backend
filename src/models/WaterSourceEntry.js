@@ -14,11 +14,19 @@ const WaterSourceEntry = sequelize.define(
     latitude: {
       type: DataTypes.DECIMAL(9, 6),
       allowNull: false,
+      validate: {
+        min: -90,
+        max: 90,
+      },
     },
 
     longitude: {
       type: DataTypes.DECIMAL(9, 6),
       allowNull: false,
+      validate: {
+        min: -180,
+        max: 180,
+      },
     },
 
     elevation: {
@@ -29,16 +37,25 @@ const WaterSourceEntry = sequelize.define(
     sourceType: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        isIn: [["spring", "creek", "lake", "seasonal", "tank"]],
+      },
     },
 
     flowRating: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        isIn: [["dry", "trickle", "moderate", "strong"]],
+      },
     },
 
     lastConfirmedDate: {
       type: DataTypes.DATEONLY,
       allowNull: false,
+      validate: {
+        isDate: true,
+      },
     },
 
     potabilityNotes: {
