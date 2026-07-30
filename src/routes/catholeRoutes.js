@@ -2,6 +2,7 @@ const express = require("express");
 const CatholeEntry = require("../models/CatholeEntry");
 const requireAuth = require("../middleware/authMiddleware");
 const validateCatholeEntry = require("../validators/catholeValidator");
+const validateEntryId = require("../middleware/validateEntryId");
 
 const router = express.Router();
 
@@ -57,7 +58,7 @@ router.post("/", requireAuth, async (request, response) => {
   }
 });
 
-router.get("/", requireAuth, async (request, response) => {
+router.get("/:id", requireAuth, validateEntryId, async (request, response) => {
   try {
     const entries = await CatholeEntry.findAll({
       where: {
@@ -106,7 +107,7 @@ router.get("/:id", requireAuth, async (request, response) => {
   }
 });
 
-router.put("/:id", requireAuth, async (request, response) => {
+router.put("/:id", requireAuth, validateEntryId, async (request, response) => {
   try {
     const entry = await CatholeEntry.findOne({
       where: {
@@ -188,7 +189,7 @@ router.put("/:id", requireAuth, async (request, response) => {
   }
 });
 
-router.delete("/:id", requireAuth, async (request, response) => {
+router.delete("/:id", requireAuth, validateEntryId, async (request, response) => {
   try {
     const entry = await CatholeEntry.findOne({
       where: {
