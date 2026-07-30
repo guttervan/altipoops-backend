@@ -1,13 +1,21 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const User = require("../models/User");
-const router = express.Router();
 const jwt = require("jsonwebtoken");
+const { ValidationError, UniqueConstraintError } = require("sequelize");
+
+const User = require("../models/User");
 const requireAuth = require("../middleware/authMiddleware");
+
+const router = express.Router();
 
 router.post("/register", async (request, response) => {
   try {
-    const { displayName, email, password, homeRegion } = request.body;
+    const {
+      displayName,
+      email,
+      password,
+      homeRegion,
+    } = request.body || {};
 
     if (!displayName || !email || !password) {
       return response.status(400).json({
@@ -15,8 +23,12 @@ router.post("/register", async (request, response) => {
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const existingUser = await User.findOne({
-      where: { email },
+      where: {
+        email: normalizedEmail,
+      },
     });
 
     if (existingUser) {
@@ -29,7 +41,7 @@ router.post("/register", async (request, response) => {
 
     const user = await User.create({
       displayName,
-      email,
+      email: normalizedEmail,
       passwordHash,
       homeRegion: homeRegion || null,
     });
@@ -47,14 +59,27 @@ router.post("/register", async (request, response) => {
   } catch (error) {
     console.error(error);
 
+    if (error instanceof UniqueConstraintError) {
+      return response.status(409).json({
+        message: "An account with that email already exists.",
+      });
+    }
+
+    if (error instanceof ValidationError) {
+      return response.status(400).json({
+        message: error.errors[0]?.message || "Invalid registration information.",
+      });
+    }
+
     response.status(500).json({
       message: "Something went wrong while registering the user.",
     });
   }
 });
+
 router.post("/login", async (request, response) => {
   try {
-    const { email, password } = request.body;
+    const { email, password } = request.body || {};
 
     if (!email || !password) {
       return response.status(400).json({
@@ -62,8 +87,12 @@ router.post("/login", async (request, response) => {
       });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const user = await User.findOne({
-      where: { email },
+      where: {
+        email: normalizedEmail,
+      },
     });
 
     if (!user) {
@@ -84,27 +113,27 @@ router.post("/login", async (request, response) => {
     }
 
     const token = jwt.sign(
-  {
-    userId: user.id,
-    email: user.email,
-  },
-  process.env.JWT_SECRET,
-  {
-    expiresIn: "7d",
-  }
-);
+      {
+        userId: user.id,
+        email: user.email,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
+    );
 
-response.status(200).json({
-  message: "Login successful!",
-  token,
-  user: {
-    id: user.id,
-    displayName: user.displayName,
-    email: user.email,
-    homeRegion: user.homeRegion,
-    privacySetting: user.privacySetting,
-  },
-});
+    response.status(200).json({
+      message: "Login successful!",
+      token,
+      user: {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        homeRegion: user.homeRegion,
+        privacySetting: user.privacySetting,
+      },
+    });
   } catch (error) {
     console.error(error);
 
@@ -154,7 +183,7 @@ router.put("/me", requireAuth, async (request, response) => {
       displayName,
       homeRegion,
       privacySetting,
-    } = request.body;
+    } = request.body || {};
 
     const allowedPrivacySettings = [
       "private",
@@ -167,16 +196,14 @@ router.put("/me", requireAuth, async (request, response) => {
       !allowedPrivacySettings.includes(privacySetting)
     ) {
       return response.status(400).json({
-        message:
-          "Privacy setting must be private, friends, or public.",
+        message: "Privacy setting must be private, friends, or public.",
       });
     }
 
     await user.update({
       displayName: displayName ?? user.displayName,
       homeRegion: homeRegion ?? user.homeRegion,
-      privacySetting:
-        privacySetting ?? user.privacySetting,
+      privacySetting: privacySetting ?? user.privacySetting,
     });
 
     response.status(200).json({
@@ -192,9 +219,16 @@ router.put("/me", requireAuth, async (request, response) => {
   } catch (error) {
     console.error(error);
 
+    if (error instanceof ValidationError) {
+      return response.status(400).json({
+        message: error.errors[0]?.message || "Invalid profile information.",
+      });
+    }
+
     response.status(500).json({
       message: "Something went wrong while updating the profile.",
     });
   }
 });
+
 module.exports = router;
