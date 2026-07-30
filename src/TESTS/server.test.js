@@ -1,9 +1,41 @@
 const request = require("supertest");
 const app = require("../server");
 const sequelize = require("../config/database");
+const User = require("../models/User");
 
 describe("Altipoop API", () => {
+  let authToken;
+  let testUserEmail;
+
+  beforeAll(async () => {
+    testUserEmail = `test-${Date.now()}@example.com`;
+
+    await request(app)
+      .post("/api/auth/register")
+      .send({
+        displayName: "Automated Test User",
+        email: testUserEmail,
+        password: "TestPassword123!",
+        homeRegion: "Colorado",
+      });
+
+    const loginResponse = await request(app)
+      .post("/api/auth/login")
+      .send({
+        email: testUserEmail,
+        password: "TestPassword123!",
+      });
+
+    authToken = loginResponse.body.token;
+  });
+
   afterAll(async () => {
+    await User.destroy({
+      where: {
+        email: testUserEmail,
+      },
+    });
+
     await sequelize.close();
   });
 
@@ -68,19 +100,25 @@ describe("Altipoop API", () => {
     expect(response.body.message).toBeDefined();
   });
 
-  test("Cathole route rejects a non-numeric entry ID", async () => {
+  test("Cathole route rejects a bad entry ID after authentication", async () => {
     const response = await request(app)
       .get("/api/catholes/YOUR_ID")
-      .set("Authorization", "Bearer invalid-token");
+      .set("Authorization", `Bearer ${authToken}`);
 
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      message: "Entry ID must be a positive whole number.",
+    });
   });
 
-  test("Water source route rejects a non-numeric entry ID", async () => {
+  test("Water source route rejects a bad entry ID after authentication", async () => {
     const response = await request(app)
       .get("/api/water-sources/YOUR_ID")
-      .set("Authorization", "Bearer invalid-token");
+      .set("Authorization", `Bearer ${authToken}`);
 
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      message: "Entry ID must be a positive whole number.",
+    });
   });
 });
