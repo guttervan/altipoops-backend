@@ -2,32 +2,51 @@ require("dotenv").config();
 
 const express = require("express");
 const sequelize = require("./config/database");
-const User = require("./models/User");
+
+require("./models/User");
+require("./models/CatholeEntry");
+require("./models/WaterSourceEntry");
+
 const authRoutes = require("./routes/authRoutes");
-const CatholeEntry = require("./models/CatholeEntry");
-const app = express();
-const PORT = process.env.PORT || 3000;
 const catholeRoutes = require("./routes/catholeRoutes");
-const WaterSourceEntry = require("./models/WaterSourceEntry");
 const waterSourceRoutes = require("./routes/waterSourceRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
 
-
-app.use("/api/catholes", catholeRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/catholes", catholeRoutes);
 app.use("/api/water-sources", waterSourceRoutes);
-app.use("/api/stats", statsRoutes); 
+app.use("/api/stats", statsRoutes);
 
 app.get("/", (request, response) => {
-  response.send("Altipoop API Running!");
+  response.status(200).json({
+    message: "Altipoop API Running!",
+  });
+});
+
+app.use((request, response) => {
+  response.status(404).json({
+    message: "Route not found.",
+  });
+});
+
+app.use((error, request, response, next) => {
+  console.error(error);
+
+  response.status(500).json({
+    message: "An unexpected server error occurred.",
+  });
 });
 
 async function startServer() {
   try {
     await sequelize.authenticate();
     console.log("Connected to PostgreSQL!");
+
     await sequelize.sync();
     console.log("Database tables synchronized!");
 
