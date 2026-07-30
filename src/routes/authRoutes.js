@@ -1,7 +1,10 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { ValidationError, UniqueConstraintError } = require("sequelize");
+const {
+  ValidationError,
+  UniqueConstraintError,
+} = require("sequelize");
 
 const User = require("../models/User");
 const requireAuth = require("../middleware/authMiddleware");
@@ -20,6 +23,30 @@ router.post("/register", async (request, response) => {
     if (!displayName || !email || !password) {
       return response.status(400).json({
         message: "Display name, email, and password are required.",
+      });
+    }
+
+    if (password.length < 8) {
+      return response.status(400).json({
+        message: "Password must be at least 8 characters long.",
+      });
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      return response.status(400).json({
+        message: "Password must include at least one uppercase letter.",
+      });
+    }
+
+    if (!/[a-z]/.test(password)) {
+      return response.status(400).json({
+        message: "Password must include at least one lowercase letter.",
+      });
+    }
+
+    if (!/[0-9]/.test(password)) {
+      return response.status(400).json({
+        message: "Password must include at least one number.",
       });
     }
 
@@ -67,7 +94,9 @@ router.post("/register", async (request, response) => {
 
     if (error instanceof ValidationError) {
       return response.status(400).json({
-        message: error.errors[0]?.message || "Invalid registration information.",
+        message:
+          error.errors[0]?.message ||
+          "Invalid registration information.",
       });
     }
 
@@ -196,14 +225,16 @@ router.put("/me", requireAuth, async (request, response) => {
       !allowedPrivacySettings.includes(privacySetting)
     ) {
       return response.status(400).json({
-        message: "Privacy setting must be private, friends, or public.",
+        message:
+          "Privacy setting must be private, friends, or public.",
       });
     }
 
     await user.update({
       displayName: displayName ?? user.displayName,
       homeRegion: homeRegion ?? user.homeRegion,
-      privacySetting: privacySetting ?? user.privacySetting,
+      privacySetting:
+        privacySetting ?? user.privacySetting,
     });
 
     response.status(200).json({
@@ -221,7 +252,9 @@ router.put("/me", requireAuth, async (request, response) => {
 
     if (error instanceof ValidationError) {
       return response.status(400).json({
-        message: error.errors[0]?.message || "Invalid profile information.",
+        message:
+          error.errors[0]?.message ||
+          "Invalid profile information.",
       });
     }
 
