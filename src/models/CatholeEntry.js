@@ -14,11 +14,19 @@ const CatholeEntry = sequelize.define(
     latitude: {
       type: DataTypes.DECIMAL(9, 6),
       allowNull: false,
+      validate: {
+        min: -90,
+        max: 90,
+      },
     },
 
     longitude: {
       type: DataTypes.DECIMAL(9, 6),
       allowNull: false,
+      validate: {
+        min: -180,
+        max: 180,
+      },
     },
 
     elevation: {
@@ -29,26 +37,41 @@ const CatholeEntry = sequelize.define(
     terrainType: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        isIn: [["forest", "desert", "alpine", "snow", "other"]],
+      },
     },
 
     method: {
       type: DataTypes.STRING,
       allowNull: false,
+      validate: {
+        isIn: [["cathole", "wag_bag", "groover"]],
+      },
     },
 
     distanceFromWater: {
       type: DataTypes.INTEGER,
       allowNull: true,
+      validate: {
+        min: 0,
+      },
     },
 
     distanceFromTrail: {
       type: DataTypes.INTEGER,
       allowNull: true,
+      validate: {
+        min: 0,
+      },
     },
 
     distanceFromCamp: {
       type: DataTypes.INTEGER,
       allowNull: true,
+      validate: {
+        min: 0,
+      },
     },
 
     depthConfirmed: {
@@ -74,13 +97,11 @@ const CatholeEntry = sequelize.define(
   }
 );
 
-// One user can have many cathole entries.
 User.hasMany(CatholeEntry, {
   foreignKey: "userId",
   onDelete: "CASCADE",
 });
 
-// Every cathole entry belongs to one user.
 CatholeEntry.belongsTo(User, {
   foreignKey: "userId",
 });
