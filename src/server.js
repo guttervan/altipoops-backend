@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const catholeRoutes = require("./routes/catholeRoutes");
 const WaterSourceEntry = require("./models/WaterSourceEntry");
 const waterSourceRoutes = require("./routes/waterSourceRoutes");
+const statsRoutes = require("./routes/statsRoutes");
 
 app.use(express.json());
 
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use("/api/catholes", catholeRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/water-sources", waterSourceRoutes);
+app.use("/api/stats", statsRoutes); 
 
 app.get("/", (request, response) => {
   response.send("Altipoop API Running!");
