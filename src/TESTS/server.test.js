@@ -46,4 +46,25 @@ describe("Altipoop API", () => {
       message: "Request body contains invalid JSON.",
     });
   });
+
+ test("POST /api/catholes without a token returns 401", async () => {
+  const response = await request(app).post("/api/catholes").send({});
+
+  expect(response.statusCode).toBe(401);
+  expect(response.body.message).toBeDefined();
+  });
+
+  test("GET /api/water-sources without a token returns 401", async () => {
+    const response = await request(app).get("/api/water-sources");
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body.message).toBeDefined();
+  });
+
+  test("GET /api/stats/me without a token returns 401", async () => {
+    const response = await request(app).get("/api/stats/me");
+
+    expect(response.statusCode).toBe(401);
+    expect(response.body.message).toBeDefined();
+  });
 });
