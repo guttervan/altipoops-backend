@@ -24,4 +24,26 @@ describe("Altipoop API", () => {
       message: "Route not found.",
     });
   });
+
+  test("GET /api/health reports a healthy server and database", async () => {
+    const response = await request(app).get("/api/health");
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.status).toBe("healthy");
+    expect(response.body.server).toBe("running");
+    expect(response.body.database).toBe("connected");
+    expect(response.body.timestamp).toBeDefined();
+  });
+
+  test("Malformed JSON returns a 400 response", async () => {
+    const response = await request(app)
+      .post("/api/auth/login")
+      .set("Content-Type", "application/json")
+      .send('{"email":"test@example.com","password":"secret123"');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      message: "Request body contains invalid JSON.",
+    });
+  });
 });
