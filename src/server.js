@@ -32,6 +32,28 @@ app.get("/", (request, response) => {
   });
 });
 
+app.get("/api/health", async (request, response) => {
+  try {
+    await sequelize.authenticate();
+
+    response.status(200).json({
+      status: "healthy",
+      server: "running",
+      database: "connected",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error(error);
+
+    response.status(503).json({
+      status: "unhealthy",
+      server: "running",
+      database: "disconnected",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 app.use((request, response) => {
   response.status(404).json({
     message: "Route not found.",
@@ -41,7 +63,11 @@ app.use((request, response) => {
 app.use((error, request, response, next) => {
   console.error(error);
 
-  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+  if (
+    error instanceof SyntaxError &&
+    error.status === 400 &&
+    "body" in error
+  ) {
     return response.status(400).json({
       message: "Request body contains invalid JSON.",
     });
@@ -57,6 +83,7 @@ app.use((error, request, response, next) => {
     message: "An unexpected server error occurred.",
   });
 });
+
 async function startServer() {
   try {
     await sequelize.authenticate();
