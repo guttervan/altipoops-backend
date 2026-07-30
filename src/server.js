@@ -15,7 +15,11 @@ const statsRoutes = require("./routes/statsRoutes");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(
+  express.json({
+    limit: "100kb",
+  })
+);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/catholes", catholeRoutes);
@@ -37,11 +41,22 @@ app.use((request, response) => {
 app.use((error, request, response, next) => {
   console.error(error);
 
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return response.status(400).json({
+      message: "Request body contains invalid JSON.",
+    });
+  }
+
+  if (error.type === "entity.too.large") {
+    return response.status(413).json({
+      message: "Request body is too large.",
+    });
+  }
+
   response.status(500).json({
     message: "An unexpected server error occurred.",
   });
 });
-
 async function startServer() {
   try {
     await sequelize.authenticate();
