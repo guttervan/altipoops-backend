@@ -47,12 +47,12 @@ describe("Altipoop API", () => {
     });
   });
 
-test("GET /api/catholes without a token returns 401", async () => {
-  const response = await request(app).get("/api/catholes");
+  test("GET /api/catholes without a token returns 401", async () => {
+    const response = await request(app).get("/api/catholes");
 
-  expect(response.statusCode).toBe(401);
-  expect(response.body.message).toBeDefined();
-});
+    expect(response.statusCode).toBe(401);
+    expect(response.body.message).toBeDefined();
+  });
 
   test("GET /api/water-sources without a token returns 401", async () => {
     const response = await request(app).get("/api/water-sources");
@@ -66,5 +66,21 @@ test("GET /api/catholes without a token returns 401", async () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.body.message).toBeDefined();
+  });
+
+  test("Cathole route rejects a non-numeric entry ID", async () => {
+    const response = await request(app)
+      .get("/api/catholes/YOUR_ID")
+      .set("Authorization", "Bearer invalid-token");
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("Water source route rejects a non-numeric entry ID", async () => {
+    const response = await request(app)
+      .get("/api/water-sources/YOUR_ID")
+      .set("Authorization", "Bearer invalid-token");
+
+    expect(response.statusCode).toBe(401);
   });
 });
