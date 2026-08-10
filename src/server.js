@@ -224,6 +224,12 @@ async function startServer() {
       "Connected to PostgreSQL!"
     );
 
+    await sequelize.sync();
+
+    console.log(
+      "Database tables synchronized!"
+    );
+
     await sequelize.query(`
       ALTER TABLE water_source_entries
       ADD COLUMN IF NOT EXISTS
@@ -254,17 +260,11 @@ async function startServer() {
       "isPublic" BOOLEAN NOT NULL DEFAULT FALSE;
     `);
 
-    await sequelize.sync();
-
-    console.log(
-      "Database tables synchronized!"
-    );
-
     app.listen(
       PORT,
       () => {
         console.log(
-          `Server running at http://localhost:${PORT}`
+          `Server running on port ${PORT}`
         );
       }
     );
