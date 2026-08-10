@@ -1,6 +1,7 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../config/database");
 const User = require("./User");
+const Trip = require("./Trip");
 
 const CatholeEntry = sequelize.define(
   "CatholeEntry",
@@ -32,6 +33,14 @@ const CatholeEntry = sequelize.define(
     elevation: {
       type: DataTypes.INTEGER,
       allowNull: true,
+    },
+
+    elevationSource: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isIn: [["usgs", "phone_gps", "manual", "unknown"]],
+      },
     },
 
     terrainType: {
@@ -90,6 +99,16 @@ const CatholeEntry = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+
+    photoUrl: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    tripId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   },
   {
     tableName: "cathole_entries",
@@ -104,6 +123,17 @@ User.hasMany(CatholeEntry, {
 
 CatholeEntry.belongsTo(User, {
   foreignKey: "userId",
+});
+
+Trip.hasMany(CatholeEntry, {
+  foreignKey: "tripId",
+  as: "catholes",
+  onDelete: "SET NULL",
+});
+
+CatholeEntry.belongsTo(Trip, {
+  foreignKey: "tripId",
+  as: "trip",
 });
 
 module.exports = CatholeEntry;

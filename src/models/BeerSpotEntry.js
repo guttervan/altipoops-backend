@@ -3,8 +3,8 @@ const sequelize = require("../config/database");
 const User = require("./User");
 const Trip = require("./Trip");
 
-const WaterSourceEntry = sequelize.define(
-  "WaterSourceEntry",
+const BeerSpotEntry = sequelize.define(
+  "BeerSpotEntry",
   {
     id: {
       type: DataTypes.INTEGER,
@@ -43,33 +43,51 @@ const WaterSourceEntry = sequelize.define(
       },
     },
 
-    sourceType: {
+    venueName: {
       type: DataTypes.STRING,
       allowNull: false,
-      validate: {
-        isIn: [["spring", "creek", "lake", "seasonal", "tank"]],
-      },
     },
 
-    flowRating: {
+    spotType: {
       type: DataTypes.STRING,
       allowNull: false,
+      defaultValue: "summit",
       validate: {
-        isIn: [["dry", "trickle", "moderate", "strong"]],
+        isIn: [[
+          "summit",
+          "brewery",
+          "taproom",
+          "bar",
+          "restaurant",
+          "campsite",
+          "other",
+        ]],
       },
     },
 
-    lastConfirmedDate: {
-      type: DataTypes.DATEONLY,
-      allowNull: false,
-      validate: {
-        isDate: true,
-      },
-    },
-
-    potabilityNotes: {
-      type: DataTypes.TEXT,
+    beerName: {
+      type: DataTypes.STRING,
       allowNull: true,
+    },
+
+    beerStyle: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    rating: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 1,
+        max: 5,
+      },
+    },
+
+    postHikeStop: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
 
     notes: {
@@ -86,37 +104,31 @@ const WaterSourceEntry = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-
-    isPublic: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-    },
   },
   {
-    tableName: "water_source_entries",
+    tableName: "beer_spot_entries",
     timestamps: true,
   }
 );
 
-User.hasMany(WaterSourceEntry, {
+User.hasMany(BeerSpotEntry, {
   foreignKey: "userId",
   onDelete: "CASCADE",
 });
 
-WaterSourceEntry.belongsTo(User, {
+BeerSpotEntry.belongsTo(User, {
   foreignKey: "userId",
 });
 
-Trip.hasMany(WaterSourceEntry, {
+Trip.hasMany(BeerSpotEntry, {
   foreignKey: "tripId",
-  as: "waterSources",
+  as: "beerSpots",
   onDelete: "SET NULL",
 });
 
-WaterSourceEntry.belongsTo(Trip, {
+BeerSpotEntry.belongsTo(Trip, {
   foreignKey: "tripId",
   as: "trip",
 });
 
-module.exports = WaterSourceEntry;
+module.exports = BeerSpotEntry;
