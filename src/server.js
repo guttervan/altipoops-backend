@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
+const cors = require("cors");
 
 const sequelize = require("./config/database");
 
@@ -27,6 +28,33 @@ const publicFeedRoutes = require("./routes/publicFeedRoutes");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
+
+const allowedOrigins = [
+  "https://altipoop.com",
+  "https://www.altipoop.com",
+  "http://localhost:3000",
+  "http://localhost:8081",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:8081",
+];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("Origin not allowed by CORS.")
+      );
+    },
+  })
+);
 
 app.use(
   express.json({
