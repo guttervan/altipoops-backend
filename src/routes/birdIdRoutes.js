@@ -315,123 +315,42 @@ function runProcess(
   args,
   options = {}
 ) {
-  const {
-    timeoutMs = 0,
-    logPrefix = null,
-    ...spawnOptions
-  } = options;
-
   return new Promise(
     (resolve, reject) => {
-      let settled = false;
-      let timeoutId = null;
-
       const child = spawn(
         executable,
         args,
         {
           windowsHide: true,
-          ...spawnOptions,
+          ...options,
         }
       );
 
       let stdout = "";
       let stderr = "";
 
-      if (logPrefix) {
-        console.log(
-          `${logPrefix} started:`,
-          executable,
-          args.join(" ")
-        );
-      }
-
       child.stdout?.on(
         "data",
         (chunk) => {
-          const value =
-            chunk.toString();
-
-          stdout += value;
-
-          if (logPrefix) {
-            console.log(
-              `${logPrefix} stdout:`,
-              value.trimEnd()
-            );
-          }
+          stdout += chunk.toString();
         }
       );
 
       child.stderr?.on(
         "data",
         (chunk) => {
-          const value =
-            chunk.toString();
-
-          stderr += value;
-
-          if (logPrefix) {
-            console.error(
-              `${logPrefix} stderr:`,
-              value.trimEnd()
-            );
-          }
+          stderr += chunk.toString();
         }
       );
 
-      function finishWithError(
-        error
-      ) {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-
-        if (timeoutId) {
-          clearTimeout(
-            timeoutId
-          );
-        }
-
-        reject(error);
-      }
-
       child.on(
         "error",
-        (error) => {
-          finishWithError(
-            error
-          );
-        }
+        reject
       );
 
       child.on(
         "close",
-        (code, signal) => {
-          if (settled) {
-            return;
-          }
-
-          settled = true;
-
-          if (timeoutId) {
-            clearTimeout(
-              timeoutId
-            );
-          }
-
-          if (logPrefix) {
-            console.log(
-              `${logPrefix} exited:`,
-              {
-                code,
-                signal,
-              }
-            );
-          }
-
+        (code) => {
           if (code === 0) {
             resolve({
               stdout,
@@ -441,65 +360,16 @@ function runProcess(
             return;
           }
 
-          const error =
-            new Error(
-              stderr.trim() ||
-              stdout.trim() ||
-              (
-                signal
-                  ? `Process exited after signal ${signal}.`
-                  : `Process exited with code ${code}.`
-              )
-            );
+          const error = new Error(
+            stderr.trim() ||
+            stdout.trim() ||
+            `Process exited with code ${code}.`
+          );
 
           error.statusCode = 502;
           reject(error);
         }
       );
-
-      if (
-        Number.isFinite(
-          timeoutMs
-        ) &&
-        timeoutMs > 0
-      ) {
-        timeoutId =
-          setTimeout(
-            () => {
-              if (settled) {
-                return;
-              }
-
-              console.error(
-                `${
-                  logPrefix ||
-                  "Process"
-                } timed out after ${timeoutMs} ms.`
-              );
-
-              try {
-                child.kill(
-                  "SIGKILL"
-                );
-              } catch {
-                // Ignore kill errors.
-              }
-
-              const error =
-                new Error(
-                  "Bird identification timed out on the server. Please try a shorter recording."
-                );
-
-              error.statusCode =
-                504;
-
-              finishWithError(
-                error
-              );
-            },
-            timeoutMs
-          );
-      }
     }
   );
 }
@@ -993,35 +863,14 @@ router.post(
         );
       }
 
-      console.log(
-        "Starting BirdNET analysis:",
-        {
-          pythonExecutable,
-          input:
-            wavInputPath,
-          output:
-            outputDirectory,
-          platform:
-            process.platform,
-        }
-      );
-
       const processResult =
         await runProcess(
           pythonExecutable,
           args,
           {
             cwd: projectRoot,
-            timeoutMs:
-              90000,
-            logPrefix:
-              "BirdNET",
           }
         );
-
-      console.log(
-        "BirdNET analysis process completed."
-      );
 
       const csvFiles =
         await findCsvFiles(
@@ -1359,6 +1208,75 @@ router.post(
           message:
             error.message ||
             "Something went wrong while saving the bird observation.",
+        });
+    }
+  }
+);
+
+router.delete(
+  "/:id",
+  requireAuth,
+  async (
+    request,
+    response
+  ) => {
+    try {
+      const entryId =
+        Number(request.params.id);
+
+      if (
+        !Number.isInteger(entryId) ||
+        entryId <= 0
+      ) {
+        return response
+          .status(400)
+          .json({
+            message:
+              "Bird observation ID is invalid.",
+          });
+      }
+
+      const entry =
+        await BirdObservation.findOne({
+          where: {
+            id: entryId,
+            userId:
+              request.user.userId,
+          },
+        });
+
+      if (!entry) {
+        return response
+          .status(404)
+          .json({
+            message:
+              "Bird observation not found.",
+          });
+      }
+
+      await deleteAudioFile(
+        entry.audioUrl
+      );
+
+      await entry.destroy();
+
+      response
+        .status(200)
+        .json({
+          message:
+            "Bird observation deleted.",
+        });
+    } catch (error) {
+      console.error(
+        "Could not delete bird observation:",
+        error
+      );
+
+      response
+        .status(500)
+        .json({
+          message:
+            "Something went wrong while deleting the bird observation.",
         });
     }
   }
