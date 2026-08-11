@@ -1,8 +1,8 @@
-const crypto = require("crypto");
 const express = require("express");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
+const cloudinary = require("cloudinary").v2;
 
 const BeerSpotEntry = require("../models/BeerSpotEntry");
 const Trip = require("../models/Trip");
@@ -19,8 +19,10 @@ const uploadsDirectory = path.join(
   "uploads"
 );
 
-fs.mkdirSync(uploadsDirectory, {
-  recursive: true,
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
 const allowedMimeTypes = new Set([
@@ -31,42 +33,8 @@ const allowedMimeTypes = new Set([
   "image/heif",
 ]);
 
-function extensionForFile(file) {
-  const originalExtension = path
-    .extname(file.originalname || "")
-    .toLowerCase();
-
-  if (originalExtension) {
-    return originalExtension;
-  }
-
-  const extensionByMimeType = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/heic": ".heic",
-    "image/heif": ".heif",
-  };
-
-  return extensionByMimeType[file.mimetype] || ".jpg";
-}
-
-const storage = multer.diskStorage({
-  destination(request, file, callback) {
-    callback(null, uploadsDirectory);
-  },
-
-  filename(request, file, callback) {
-    const extension = extensionForFile(file);
-    const uniqueName =
-      `${Date.now()}-${crypto.randomUUID()}${extension}`;
-
-    callback(null, uniqueName);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 5 * 1024 * 1024,
@@ -87,16 +55,83 @@ const upload = multer({
   },
 });
 
-function uploadedPhotoUrl(file) {
+function uploadPhotoToCloudinary(file) {
   if (!file) {
-    return null;
+    return Promise.resolve(null);
   }
 
-  return `/uploads/${file.filename}`;
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "altipoop/beer-spots",
+        resource_type: "image",
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(result?.secure_url || null);
+      }
+    );
+
+    stream.end(file.buffer);
+  });
+}
+
+function cloudinaryPublicIdFromUrl(photoUrl) {
+  try {
+    const parsedUrl = new URL(photoUrl);
+
+    if (parsedUrl.hostname !== "res.cloudinary.com") {
+      return null;
+    }
+
+    const uploadMarker = "/upload/";
+    const markerIndex = parsedUrl.pathname.indexOf(uploadMarker);
+
+    if (markerIndex === -1) {
+      return null;
+    }
+
+    let assetPath = parsedUrl.pathname.slice(
+      markerIndex + uploadMarker.length
+    );
+
+    assetPath = assetPath.replace(/^v\d+\//, "");
+    assetPath = decodeURIComponent(assetPath);
+
+    return assetPath.replace(/\.[^/.]+$/, "");
+  } catch (error) {
+    return null;
+  }
 }
 
 async function deletePhotoFile(photoUrl) {
   if (!photoUrl) {
+    return;
+  }
+
+  const publicId = cloudinaryPublicIdFromUrl(photoUrl);
+
+  if (publicId) {
+    try {
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: "image",
+        invalidate: true,
+      });
+    } catch (error) {
+      console.error(
+        "Could not delete Cloudinary beer-spot photo:",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (!String(photoUrl).startsWith("/uploads/")) {
     return;
   }
 
@@ -112,7 +147,7 @@ async function deletePhotoFile(photoUrl) {
   } catch (error) {
     if (error.code !== "ENOENT") {
       console.error(
-        "Could not delete beer-spot photo file:",
+        "Could not delete legacy beer-spot photo:",
         error
       );
     }
@@ -216,8 +251,7 @@ router.post(
   requireAuth,
   upload.single("photo"),
   async (request, response) => {
-    const photoUrl =
-      uploadedPhotoUrl(request.file);
+    let photoUrl = null;
 
     try {
       const {
@@ -236,11 +270,8 @@ router.post(
       } = request.body || {};
 
       const normalizedEntry = {
-        latitude:
-          Number(latitude),
-
-        longitude:
-          Number(longitude),
+        latitude: Number(latitude),
+        longitude: Number(longitude),
 
         elevation:
           optionalNumber(elevation),
@@ -281,8 +312,6 @@ router.post(
           normalizedEntry.tripId
         )
       ) {
-        await deletePhotoFile(photoUrl);
-
         return response
           .status(400)
           .json({
@@ -298,8 +327,6 @@ router.post(
         );
 
       if (!tripIsValid) {
-        await deletePhotoFile(photoUrl);
-
         return response
           .status(400)
           .json({
@@ -314,8 +341,6 @@ router.post(
         );
 
       if (validationError) {
-        await deletePhotoFile(photoUrl);
-
         return response
           .status(400)
           .json({
@@ -323,6 +348,10 @@ router.post(
               validationError,
           });
       }
+
+      photoUrl = await uploadPhotoToCloudinary(
+        request.file
+      );
 
       const entry =
         await BeerSpotEntry.create({
@@ -440,10 +469,7 @@ router.put(
   validateEntryId,
   upload.single("photo"),
   async (request, response) => {
-    const newPhotoUrl =
-      uploadedPhotoUrl(
-        request.file
-      );
+    let newPhotoUrl = null;
 
     try {
       const entry =
@@ -458,10 +484,6 @@ router.put(
         });
 
       if (!entry) {
-        await deletePhotoFile(
-          newPhotoUrl
-        );
-
         return response
           .status(404)
           .json({
@@ -573,10 +595,6 @@ router.put(
           normalizedEntry.tripId
         )
       ) {
-        await deletePhotoFile(
-          newPhotoUrl
-        );
-
         return response
           .status(400)
           .json({
@@ -592,10 +610,6 @@ router.put(
         );
 
       if (!tripIsValid) {
-        await deletePhotoFile(
-          newPhotoUrl
-        );
-
         return response
           .status(400)
           .json({
@@ -610,10 +624,6 @@ router.put(
         );
 
       if (validationError) {
-        await deletePhotoFile(
-          newPhotoUrl
-        );
-
         return response
           .status(400)
           .json({
@@ -624,6 +634,11 @@ router.put(
 
       const oldPhotoUrl =
         entry.photoUrl;
+
+      newPhotoUrl =
+        await uploadPhotoToCloudinary(
+          request.file
+        );
 
       let nextPhotoUrl =
         oldPhotoUrl;
