@@ -315,42 +315,123 @@ function runProcess(
   args,
   options = {}
 ) {
+  const {
+    timeoutMs = 0,
+    logPrefix = null,
+    ...spawnOptions
+  } = options;
+
   return new Promise(
     (resolve, reject) => {
+      let settled = false;
+      let timeoutId = null;
+
       const child = spawn(
         executable,
         args,
         {
           windowsHide: true,
-          ...options,
+          ...spawnOptions,
         }
       );
 
       let stdout = "";
       let stderr = "";
 
+      if (logPrefix) {
+        console.log(
+          `${logPrefix} started:`,
+          executable,
+          args.join(" ")
+        );
+      }
+
       child.stdout?.on(
         "data",
         (chunk) => {
-          stdout += chunk.toString();
+          const value =
+            chunk.toString();
+
+          stdout += value;
+
+          if (logPrefix) {
+            console.log(
+              `${logPrefix} stdout:`,
+              value.trimEnd()
+            );
+          }
         }
       );
 
       child.stderr?.on(
         "data",
         (chunk) => {
-          stderr += chunk.toString();
+          const value =
+            chunk.toString();
+
+          stderr += value;
+
+          if (logPrefix) {
+            console.error(
+              `${logPrefix} stderr:`,
+              value.trimEnd()
+            );
+          }
+        }
+      );
+
+      function finishWithError(
+        error
+      ) {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+
+        if (timeoutId) {
+          clearTimeout(
+            timeoutId
+          );
+        }
+
+        reject(error);
+      }
+
+      child.on(
+        "error",
+        (error) => {
+          finishWithError(
+            error
+          );
         }
       );
 
       child.on(
-        "error",
-        reject
-      );
-
-      child.on(
         "close",
-        (code) => {
+        (code, signal) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+
+          if (timeoutId) {
+            clearTimeout(
+              timeoutId
+            );
+          }
+
+          if (logPrefix) {
+            console.log(
+              `${logPrefix} exited:`,
+              {
+                code,
+                signal,
+              }
+            );
+          }
+
           if (code === 0) {
             resolve({
               stdout,
@@ -360,16 +441,65 @@ function runProcess(
             return;
           }
 
-          const error = new Error(
-            stderr.trim() ||
-            stdout.trim() ||
-            `Process exited with code ${code}.`
-          );
+          const error =
+            new Error(
+              stderr.trim() ||
+              stdout.trim() ||
+              (
+                signal
+                  ? `Process exited after signal ${signal}.`
+                  : `Process exited with code ${code}.`
+              )
+            );
 
           error.statusCode = 502;
           reject(error);
         }
       );
+
+      if (
+        Number.isFinite(
+          timeoutMs
+        ) &&
+        timeoutMs > 0
+      ) {
+        timeoutId =
+          setTimeout(
+            () => {
+              if (settled) {
+                return;
+              }
+
+              console.error(
+                `${
+                  logPrefix ||
+                  "Process"
+                } timed out after ${timeoutMs} ms.`
+              );
+
+              try {
+                child.kill(
+                  "SIGKILL"
+                );
+              } catch {
+                // Ignore kill errors.
+              }
+
+              const error =
+                new Error(
+                  "Bird identification timed out on the server. Please try a shorter recording."
+                );
+
+              error.statusCode =
+                504;
+
+              finishWithError(
+                error
+              );
+            },
+            timeoutMs
+          );
+      }
     }
   );
 }
@@ -863,14 +993,35 @@ router.post(
         );
       }
 
+      console.log(
+        "Starting BirdNET analysis:",
+        {
+          pythonExecutable,
+          input:
+            wavInputPath,
+          output:
+            outputDirectory,
+          platform:
+            process.platform,
+        }
+      );
+
       const processResult =
         await runProcess(
           pythonExecutable,
           args,
           {
             cwd: projectRoot,
+            timeoutMs:
+              90000,
+            logPrefix:
+              "BirdNET",
           }
         );
+
+      console.log(
+        "BirdNET analysis process completed."
+      );
 
       const csvFiles =
         await findCsvFiles(
