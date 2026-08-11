@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const express = require("express");
 const fs = require("fs");
 const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -10,6 +11,12 @@ const BirdObservation = require("../models/BirdObservation");
 const requireAuth = require("../middleware/authMiddleware");
 
 const router = express.Router();
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const uploadsDirectory = path.join(
   __dirname,
@@ -24,34 +31,6 @@ fs.mkdirSync(
     recursive: true,
   }
 );
-
-const saveStorage =
-  multer.diskStorage({
-    destination(
-      request,
-      file,
-      callback
-    ) {
-      callback(
-        null,
-        uploadsDirectory
-      );
-    },
-
-    filename(
-      request,
-      file,
-      callback
-    ) {
-      const extension =
-        extensionForAudio(file);
-
-      callback(
-        null,
-        `bird-${Date.now()}-${crypto.randomUUID()}${extension}`
-      );
-    },
-  });
 
 const allowedMimeTypes = new Set([
   "audio/m4a",
@@ -90,7 +69,7 @@ const audioUpload = multer({
 });
 
 const saveUpload = multer({
-  storage: saveStorage,
+  storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 25 * 1024 * 1024,
@@ -141,18 +120,122 @@ function optionalText(value) {
   return cleanValue || null;
 }
 
-function uploadedAudioUrl(file) {
+function uploadAudioToCloudinary(file) {
   if (!file) {
-    return null;
+    return Promise.resolve(null);
   }
 
-  return `/uploads/${file.filename}`;
+  return new Promise((resolve, reject) => {
+    const stream =
+      cloudinary.uploader.upload_stream(
+        {
+          folder: "altipoop/birds",
+          resource_type: "video",
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve(
+            result?.secure_url || null
+          );
+        }
+      );
+
+    stream.end(file.buffer);
+  });
+}
+
+function cloudinaryPublicIdFromUrl(
+  audioUrl
+) {
+  try {
+    const parsedUrl =
+      new URL(audioUrl);
+
+    if (
+      parsedUrl.hostname !==
+      "res.cloudinary.com"
+    ) {
+      return null;
+    }
+
+    const uploadMarker =
+      "/upload/";
+
+    const markerIndex =
+      parsedUrl.pathname.indexOf(
+        uploadMarker
+      );
+
+    if (markerIndex === -1) {
+      return null;
+    }
+
+    let assetPath =
+      parsedUrl.pathname.slice(
+        markerIndex +
+          uploadMarker.length
+      );
+
+    assetPath =
+      assetPath.replace(
+        /^v\d+\//,
+        ""
+      );
+
+    assetPath =
+      decodeURIComponent(
+        assetPath
+      );
+
+    return assetPath.replace(
+      /\.[^/.]+$/,
+      ""
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function deleteAudioFile(
   audioUrl
 ) {
   if (!audioUrl) {
+    return;
+  }
+
+  const publicId =
+    cloudinaryPublicIdFromUrl(
+      audioUrl
+    );
+
+  if (publicId) {
+    try {
+      await cloudinary.uploader.destroy(
+        publicId,
+        {
+          resource_type: "video",
+          invalidate: true,
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Could not delete Cloudinary Bird ID audio:",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (
+    !String(audioUrl).startsWith(
+      "/uploads/"
+    )
+  ) {
     return;
   }
 
@@ -174,7 +257,7 @@ async function deleteAudioFile(
       error.code !== "ENOENT"
     ) {
       console.error(
-        "Could not delete Bird ID audio:",
+        "Could not delete legacy Bird ID audio:",
         error
       );
     }
@@ -948,10 +1031,7 @@ router.post(
     request,
     response
   ) => {
-    const audioUrl =
-      uploadedAudioUrl(
-        request.file
-      );
+    let audioUrl = null;
 
     try {
       if (!request.file) {
@@ -1015,6 +1095,11 @@ router.post(
       } catch {
         alternateMatches = [];
       }
+
+      audioUrl =
+        await uploadAudioToCloudinary(
+          request.file
+        );
 
       const entry =
         await BirdObservation.create({
