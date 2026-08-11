@@ -852,6 +852,75 @@ router.post(
   }
 );
 
+router.delete(
+  "/:id",
+  requireAuth,
+  async (
+    request,
+    response
+  ) => {
+    try {
+      const entryId =
+        Number(request.params.id);
+
+      if (
+        !Number.isInteger(entryId) ||
+        entryId <= 0
+      ) {
+        return response
+          .status(400)
+          .json({
+            message:
+              "Nature observation ID is invalid.",
+          });
+      }
+
+      const entry =
+        await NatureObservation.findOne({
+          where: {
+            id: entryId,
+            userId:
+              request.user.userId,
+          },
+        });
+
+      if (!entry) {
+        return response
+          .status(404)
+          .json({
+            message:
+              "Nature observation not found.",
+          });
+      }
+
+      await deletePhotoFile(
+        entry.photoUrl
+      );
+
+      await entry.destroy();
+
+      response
+        .status(200)
+        .json({
+          message:
+            "Nature observation deleted.",
+        });
+    } catch (error) {
+      console.error(
+        "Nature observation delete error:",
+        error
+      );
+
+      response
+        .status(500)
+        .json({
+          message:
+            "Something went wrong while deleting the nature observation.",
+        });
+    }
+  }
+);
+
 router.get(
   "/",
   requireAuth,
