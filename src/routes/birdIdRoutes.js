@@ -708,15 +708,21 @@ router.post(
           ".."
         );
 
+      const isWindows =
+        process.platform === "win32";
+
       const pythonExecutable =
-        path.join(
-          projectRoot,
-          ".birdnet-venv",
-          "Scripts",
-          "python.exe"
-        );
+        isWindows
+          ? path.join(
+              projectRoot,
+              ".birdnet-venv",
+              "Scripts",
+              "python.exe"
+            )
+          : "python3";
 
       if (
+        isWindows &&
         !fs.existsSync(
           pythonExecutable
         )
@@ -728,6 +734,11 @@ router.post(
               "BirdNET is not configured on the server yet.",
           });
       }
+
+      const ffmpegExecutable =
+        isWindows
+          ? "C:\\Users\\ZacharyC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin\\ffmpeg.exe"
+          : "ffmpeg";
 
       tempDirectory =
         await fs.promises.mkdtemp(
@@ -786,7 +797,7 @@ router.post(
       );
 
       await runProcess(
-        "C:\\Users\\ZacharyC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin\\ffmpeg.exe",
+        ffmpegExecutable,
         [
           "-y",
           "-i",
