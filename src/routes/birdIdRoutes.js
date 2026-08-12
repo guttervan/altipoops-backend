@@ -826,10 +826,7 @@ router.post(
         );
       }
 
-      console.log(
-        "Bird Call converted to WAV:",
-        wavInputPath
-      );
+  
 
       const args = [
         "-m",
@@ -961,15 +958,7 @@ router.post(
           });
       }
 
-      console.log(
-        "BirdNET result CSV:",
-        resultCsvPath
-      );
-
-      console.log(
-        "BirdNET raw result CSV output:\n" +
-          resultCsvText
-      );
+    
 
       const detections =
         collapseDetections(
