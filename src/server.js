@@ -66,7 +66,7 @@ app.use(
 
 app.use(
   express.json({
-    limit: "100kb",
+    limit: "5mb",
   })
 );
 
