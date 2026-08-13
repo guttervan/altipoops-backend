@@ -61,13 +61,6 @@ function extractJson(rawText) {
 
   let text = rawText.trim();
 
-  /*
-   * Remove markdown code fences such as:
-   *
-   * ```json
-   * { ... }
-   * ```
-   */
   text = text
     .replace(
       /^```(?:json)?\s*/i,
@@ -79,9 +72,6 @@ function extractJson(rawText) {
     )
     .trim();
 
-  /*
-   * First try the whole response.
-   */
   try {
     return JSON.parse(text);
   } catch (error) {
@@ -195,10 +185,6 @@ function normalizeAnalysis(parsed) {
     }
   );
 
-  /*
-   * Make sure the model returned
-   * at least some useful content.
-   */
   const hasObservations =
     expectedKeys
       .filter(
@@ -265,7 +251,9 @@ router.post(
       const prompt = `
 You are Altipoop Trail Photo Analysis.
 
-Analyze ONLY what is visibly supported by this backcountry photo.
+Your job is to report DIRECTLY VISIBLE FACTS from a backcountry photo.
+
+Do not infer a story, cause, purpose, route status, history, location, season, time of day, or safety condition from visual clues.
 
 Return ONLY one JSON object.
 
@@ -293,19 +281,73 @@ STRICT OUTPUT RULES:
 - Keep the summary to no more than 2 short sentences.
 - Maximum 3 observations per category.
 - Maximum 15 words per observation.
-- Use empty arrays when nothing useful is visible.
+- Use empty arrays when nothing useful is directly visible.
+
+DIRECT-VISIBILITY RULE:
+
+Every observation must describe something that can be pointed to in the pixels of the photo.
+
+Good:
+- "No distinct trail tread is visible."
+- "Several cut tree stumps are visible."
+- "Bright sunlight creates lens flare."
+- "Distant mountain ridges are partly obscured by haze."
+- "A dark-colored dog stands beside the hiker."
+
+Do NOT write:
+- "The hiker is off trail."
+- "This appears to be a meadow."
+- "The trees were cut by logging."
+- "The area is recovering from wildfire."
+- "Warm light suggests morning or evening."
+- "The haze is caused by smoke."
+- "The route looks difficult."
+- "The trail is poorly maintained."
+- "The water looks drinkable."
+- "The slope looks safe."
+
+Do not use visual evidence to infer an unseen cause.
+
+For example:
+- A cut stump may be described as a cut stump.
+- Do not conclude why it was cut.
+- A dead tree may be described as a dead standing tree.
+- Do not conclude what killed it.
+- Haze may be described as haze.
+- Do not conclude whether it is smoke, fog, dust, or pollution.
+- Low-angle light may be described as low-angle light.
+- Do not infer morning, evening, sunrise, or sunset.
 
 CONTENT RULES:
 
-- Terrain: visible terrain or landforms only.
-- Vegetation: visible vegetation only.
-- Weather: visible sky, clouds, precipitation, lighting, or atmospheric appearance only.
-- Trail: visible trail, path, surface, obstacles, or route features only.
-- Water: visible water only.
-- Snow: visible snow or ice only.
-- Wildlife: visible animals or clear animal evidence only.
-- Other: other useful visible details.
-- Uncertainties: things that cannot be confidently determined from the photo.
+- Terrain: directly visible terrain, slope, rock, ridges, ground, or landforms.
+- Vegetation: directly visible plants, trees, grasses, shrubs, or dead vegetation.
+- Weather: directly visible clouds, precipitation, sky appearance, haze, lighting, or visibility.
+- Trail: directly visible trail tread, path surface, obstacles, footprints, structures, or lack of visible tread.
+- Water: directly visible water only.
+- Snow: directly visible snow or ice only.
+- Wildlife: directly visible animals or clearly visible animal evidence only.
+- Other: directly visible objects or useful image details that do not fit another category.
+- Uncertainties: facts people may want to know but the image alone cannot establish.
+
+UNCERTAINTY RULES:
+
+Put interpretation questions in "uncertainties" instead of guessing.
+
+Examples:
+- exact geographic location
+- elevation
+- distance to a mountain
+- cause of tree death
+- cause of haze
+- cause of vegetation loss
+- trail or route name
+- whether the person is on or off an established route
+- exact time of day
+- exact season
+- temperature
+- weather beyond what is visible
+- species when identification is uncertain
 
 SAFETY RULES:
 

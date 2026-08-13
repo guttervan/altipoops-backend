@@ -13,6 +13,7 @@ require("./models/Trip");
 require("./models/CatholeEntry");
 require("./models/WaterSourceEntry");
 require("./models/BeerSpotEntry");
+require("./models/FinishedHike");
 
 const authRoutes = require("./routes/authRoutes");
 const catholeRoutes = require("./routes/catholeRoutes");
@@ -25,6 +26,7 @@ const tripRoutes = require("./routes/tripRoutes");
 const hikingRouteRoutes = require("./routes/hikingRouteRoutes");
 const trailheadRoutes = require("./routes/trailheadRoutes");
 const publicFeedRoutes = require("./routes/publicFeedRoutes");
+const finishedHikeRoutes = require("./routes/finishedHikeRoutes");
 
 const app = express();
 
@@ -56,10 +58,12 @@ app.use(
     },
   })
 );
+
 app.use(
   "/api/ai",
   trailPhotoAiRoutes
 );
+
 app.use(
   express.json({
     limit: "100kb",
@@ -115,6 +119,11 @@ app.use(
 app.use(
   "/api/trips",
   tripRoutes
+);
+
+app.use(
+  "/api/finished-hikes",
+  finishedHikeRoutes
 );
 
 app.use(
