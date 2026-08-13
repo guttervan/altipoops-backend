@@ -1,529 +1,575 @@
 const express = require("express");
+const { InferenceClient } = require("@huggingface/inference");
 
-const FinishedHike =
-  require("../models/FinishedHike");
-
-const requireAuth =
-  require("../middleware/authMiddleware");
+const FinishedHike = require("../models/FinishedHike");
+const requireAuth = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
 function optionalText(value) {
-  if (
-    value === undefined ||
-    value === null
-  ) {
+  if (value === undefined || value === null) {
     return null;
   }
 
-  const cleanValue =
-    String(value).trim();
-
+  const cleanValue = String(value).trim();
   return cleanValue || null;
 }
 
 function optionalNumber(value) {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
+  if (value === undefined || value === null || value === "") {
     return null;
   }
 
-  const parsed =
-    Number(value);
-
-  return Number.isFinite(parsed)
-    ? parsed
-    : null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeArray(value) {
-  return Array.isArray(value)
-    ? value
-    : [];
+  return Array.isArray(value) ? value : [];
 }
 
 function normalizeObject(value) {
-  if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value)
-  ) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return value;
   }
 
   return null;
 }
 
-function normalizeFinishedHike(
-  body
-) {
+function normalizeFinishedHike(body) {
   return {
-    id:
-      optionalText(body.id),
-
-    routeKey:
-      optionalText(body.routeKey),
-
-    routeTitle:
-      optionalText(body.routeTitle),
-
-    routeSavedAt:
-      optionalText(body.routeSavedAt),
-
-    routeEntry:
-      normalizeObject(
-        body.routeEntry
-      ),
-
-    routeCoordinates:
-      normalizeArray(
-        body.routeCoordinates
-      ),
-
-    startedAt:
-      optionalText(body.startedAt),
-
-    endedAt:
-      optionalText(body.endedAt),
-
-    expectedReturn:
-      optionalText(
-        body.expectedReturn
-      ),
-
-    distanceMiles:
-      optionalNumber(
-        body.distanceMiles
-      ) ?? 0,
-
-    durationSeconds:
-      optionalNumber(
-        body.durationSeconds
-      ) ?? 0,
-
-    movingDurationSeconds:
-      optionalNumber(
-        body.movingDurationSeconds
-      ),
-
-    averagePaceMinutesPerMile:
-      optionalNumber(
-        body.averagePaceMinutesPerMile
-      ),
-
-    elevationGainFeet:
-      optionalNumber(
-        body.elevationGainFeet
-      ),
-
-    breadcrumbPoints:
-      normalizeArray(
-        body.breadcrumbPoints
-      ),
-
-    offRouteEvents:
-      optionalNumber(
-        body.offRouteEvents
-      ) ?? 0,
-
-    maxOffRouteFeet:
-      optionalNumber(
-        body.maxOffRouteFeet
-      ),
-
-    checkInCount:
-      optionalNumber(
-        body.checkInCount
-      ) ?? 0,
-
-    contact:
-      optionalText(body.contact),
-
-    vehicle:
-      optionalText(body.vehicle),
-
-    notes:
-      optionalText(body.notes),
-
-    waypoints:
-      normalizeArray(
-        body.waypoints
-      ),
-
-    safetyTimeline:
-      normalizeArray(
-        body.safetyTimeline
-      ),
-
-    weatherLog:
-      normalizeArray(
-        body.weatherLog
-      ),
-
-    conditionChecks:
-      normalizeArray(
-        body.conditionChecks
-      ),
-
-    journalSummary:
-      optionalText(
-        body.journalSummary
-      ),
-
-    bestMomentId:
-      optionalText(
-        body.bestMomentId
-      ),
-
+    id: optionalText(body.id),
+    routeKey: optionalText(body.routeKey),
+    routeTitle: optionalText(body.routeTitle),
+    routeSavedAt: optionalText(body.routeSavedAt),
+    routeEntry: normalizeObject(body.routeEntry),
+    routeCoordinates: normalizeArray(body.routeCoordinates),
+    startedAt: optionalText(body.startedAt),
+    endedAt: optionalText(body.endedAt),
+    expectedReturn: optionalText(body.expectedReturn),
+    distanceMiles: optionalNumber(body.distanceMiles) ?? 0,
+    durationSeconds: optionalNumber(body.durationSeconds) ?? 0,
+    movingDurationSeconds: optionalNumber(body.movingDurationSeconds),
+    averagePaceMinutesPerMile: optionalNumber(body.averagePaceMinutesPerMile),
+    elevationGainFeet: optionalNumber(body.elevationGainFeet),
+    breadcrumbPoints: normalizeArray(body.breadcrumbPoints),
+    offRouteEvents: optionalNumber(body.offRouteEvents) ?? 0,
+    maxOffRouteFeet: optionalNumber(body.maxOffRouteFeet),
+    checkInCount: optionalNumber(body.checkInCount) ?? 0,
+    contact: optionalText(body.contact),
+    vehicle: optionalText(body.vehicle),
+    notes: optionalText(body.notes),
+    waypoints: normalizeArray(body.waypoints),
+    safetyTimeline: normalizeArray(body.safetyTimeline),
+    weatherLog: normalizeArray(body.weatherLog),
+    conditionChecks: normalizeArray(body.conditionChecks),
+    journalSummary: optionalText(body.journalSummary),
+    bestMomentId: optionalText(body.bestMomentId),
     isJournalPrivate:
-      typeof body.isJournalPrivate ===
-      "boolean"
-        ? body.isJournalPrivate
-        : true,
-
-    postHikeQuality:
-      normalizeObject(
-        body.postHikeQuality
-      ),
-
-    correctionReview:
-      normalizeObject(
-        body.correctionReview
-      ),
-
-    savedHikeVerification:
-      normalizeObject(
-        body.savedHikeVerification
-      ),
-
-    savedHikeRepairHistory:
-      normalizeArray(
-        body.savedHikeRepairHistory
-      ),
+      typeof body.isJournalPrivate === "boolean" ? body.isJournalPrivate : true,
+    postHikeQuality: normalizeObject(body.postHikeQuality),
+    correctionReview: normalizeObject(body.correctionReview),
+    savedHikeVerification: normalizeObject(body.savedHikeVerification),
+    savedHikeRepairHistory: normalizeArray(body.savedHikeRepairHistory),
   };
 }
 
-function validateFinishedHike(
-  hike
-) {
-  if (!hike.id) {
-    return "Finished hike id is required.";
-  }
+function validateFinishedHike(hike) {
+  if (!hike.id) return "Finished hike id is required.";
+  if (!hike.routeKey) return "Route key is required.";
+  if (!hike.routeTitle) return "Route title is required.";
+  if (!hike.startedAt) return "Start time is required.";
+  if (!hike.endedAt) return "End time is required.";
 
-  if (!hike.routeKey) {
-    return "Route key is required.";
-  }
+  const started = new Date(hike.startedAt);
+  const ended = new Date(hike.endedAt);
 
-  if (!hike.routeTitle) {
-    return "Route title is required.";
-  }
+  if (Number.isNaN(started.getTime())) return "Start time is invalid.";
+  if (Number.isNaN(ended.getTime())) return "End time is invalid.";
+  if (ended < started) return "End time cannot be before start time.";
+  if (hike.distanceMiles < 0) return "Distance cannot be negative.";
+  if (hike.durationSeconds < 0) return "Duration cannot be negative.";
 
-  if (!hike.startedAt) {
-    return "Start time is required.";
-  }
-
-  if (!hike.endedAt) {
-    return "End time is required.";
-  }
-
-  const started =
-    new Date(hike.startedAt);
-
-  const ended =
-    new Date(hike.endedAt);
-
-  if (
-    Number.isNaN(
-      started.getTime()
-    )
-  ) {
-    return "Start time is invalid.";
-  }
-
-  if (
-    Number.isNaN(
-      ended.getTime()
-    )
-  ) {
-    return "End time is invalid.";
-  }
-
-  if (ended < started) {
-    return "End time cannot be before start time.";
-  }
-
-  if (
-    hike.distanceMiles < 0
-  ) {
-    return "Distance cannot be negative.";
-  }
-
-  if (
-    hike.durationSeconds < 0
-  ) {
-    return "Duration cannot be negative.";
-  }
-
-  if (
-    hike.movingDurationSeconds !==
-      null &&
-    hike.movingDurationSeconds < 0
-  ) {
+  if (hike.movingDurationSeconds !== null && hike.movingDurationSeconds < 0) {
     return "Moving duration cannot be negative.";
   }
 
-  if (
-    hike.elevationGainFeet !==
-      null &&
-    hike.elevationGainFeet < 0
-  ) {
+  if (hike.elevationGainFeet !== null && hike.elevationGainFeet < 0) {
     return "Elevation gain cannot be negative.";
   }
 
   return null;
 }
 
-router.post(
-  "/",
-  requireAuth,
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const normalized =
-        normalizeFinishedHike(
-          request.body || {}
-        );
+function extractJson(rawText) {
+  if (typeof rawText !== "string" || !rawText.trim()) {
+    return null;
+  }
 
-      const validationError =
-        validateFinishedHike(
-          normalized
-        );
+  let text = rawText.trim();
 
-      if (validationError) {
-        return response
-          .status(400)
-          .json({
-            message:
-              validationError,
-          });
-      }
+  text = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
 
-      const [
-        hike,
-        created,
-      ] =
-        await FinishedHike.findOrCreate(
-          {
-            where: {
-              id:
-                normalized.id,
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    // Try extracting only the JSON object.
+  }
 
-              userId:
-                request.user.userId,
-            },
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
 
-            defaults: {
-              ...normalized,
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return null;
+  }
 
-              userId:
-                request.user.userId,
-            },
-          }
-        );
+  try {
+    return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+  } catch (error) {
+    return null;
+  }
+}
 
-      if (!created) {
-        await hike.update(
-          normalized
-        );
-      }
+function normalizeRecapString(value, maxLength = 900) {
+  if (typeof value !== "string") {
+    return "";
+  }
 
-      return response
-        .status(
-          created
-            ? 201
-            : 200
+  return value.trim().slice(0, maxLength);
+}
+
+function normalizeRecapArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((item) => item.slice(0, 180));
+}
+
+function normalizeRecap(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const recap = {
+    headline: normalizeRecapString(parsed.headline, 120),
+    summary: normalizeRecapString(parsed.summary, 900),
+    highlights: normalizeRecapArray(parsed.highlights),
+    challenges: normalizeRecapArray(parsed.challenges),
+    closing: normalizeRecapString(parsed.closing, 220),
+  };
+
+  if (
+    !recap.headline &&
+    !recap.summary &&
+    recap.highlights.length === 0 &&
+    recap.challenges.length === 0 &&
+    !recap.closing
+  ) {
+    return null;
+  }
+
+  return recap;
+}
+
+function finiteOrNull(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function buildHikeFacts(hike) {
+  const weatherLog =
+    Array.isArray(hike.weatherLog)
+      ? hike.weatherLog
+      : [];
+
+  const conditionChecks =
+    Array.isArray(hike.conditionChecks)
+      ? hike.conditionChecks
+      : [];
+
+  const waypoints =
+    Array.isArray(hike.waypoints)
+      ? hike.waypoints
+      : [];
+
+  const postHikeQuality =
+    hike.postHikeQuality &&
+    typeof hike.postHikeQuality ===
+      "object"
+      ? hike.postHikeQuality
+      : null;
+
+  const correctionReview =
+    hike.correctionReview &&
+    typeof hike.correctionReview ===
+      "object"
+      ? hike.correctionReview
+      : null;
+
+  return {
+    routeTitle:
+      hike.routeTitle,
+
+    hasRecordedRouteDeviation:
+      typeof hike.offRouteEvents ===
+        "number" &&
+      Number.isFinite(
+        hike.offRouteEvents
+      ) &&
+      hike.offRouteEvents > 0,
+
+    hasRecordedCheckIns:
+      typeof hike.checkInCount ===
+        "number" &&
+      Number.isFinite(
+        hike.checkInCount
+      ) &&
+      hike.checkInCount > 0,
+
+    waypointKinds:
+      waypoints
+        .map(
+          (waypoint) =>
+            typeof waypoint?.kind ===
+              "string"
+              ? waypoint.kind.trim()
+              : null
         )
-        .json({
-          message:
-            created
-              ? "Finished hike saved successfully!"
-              : "Finished hike updated successfully!",
+        .filter(Boolean)
+        .slice(0, 12),
 
-          hike,
-        });
-    } catch (error) {
-      console.error(
-        "Finished hike save failed:",
-        error
-      );
+    weatherEvents:
+      weatherLog
+        .map(
+          (event) => ({
+            label:
+              typeof event?.label ===
+                "string"
+                ? event.label.trim()
+                : null,
 
-      return response
-        .status(500)
-        .json({
-          message:
-            "Something went wrong while saving the finished hike.",
-        });
-    }
-  }
-);
+            severity:
+              typeof event?.severity ===
+                "string"
+                ? event.severity.trim()
+                : null,
+          })
+        )
+        .filter(
+          (event) =>
+            event.label
+        )
+        .slice(0, 12),
 
-router.get(
-  "/",
-  requireAuth,
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const hikes =
-        await FinishedHike.findAll(
-          {
-            where: {
-              userId:
-                request.user.userId,
-            },
+    conditionLevels:
+      conditionChecks
+        .map(
+          (check) =>
+            typeof check?.level ===
+              "string"
+              ? check.level.trim()
+              : null
+        )
+        .filter(Boolean)
+        .slice(0, 12),
 
-            order: [
-              [
-                "endedAt",
-                "DESC",
-              ],
-            ],
+    quality:
+      postHikeQuality
+        ? {
+            grade:
+              typeof postHikeQuality.grade ===
+                "string"
+                ? postHikeQuality.grade
+                : null,
           }
-        );
+        : null,
 
-      return response
-        .status(200)
-        .json({
-          count:
-            hikes.length,
+    correction:
+      correctionReview
+        ? {
+            status:
+              typeof correctionReview.status ===
+                "string"
+                ? correctionReview.status
+                : null,
 
-          hikes,
-        });
-    } catch (error) {
-      console.error(
-        "Finished hike list failed:",
-        error
-      );
+            decision:
+              typeof correctionReview.decision ===
+                "string"
+                ? correctionReview.decision
+                : null,
 
-      return response
-        .status(500)
-        .json({
-          message:
-            "Something went wrong while loading finished hikes.",
-        });
-    }
-  }
-);
-
-router.get(
-  "/:id",
-  requireAuth,
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const hike =
-        await FinishedHike.findOne(
-          {
-            where: {
-              id:
-                request.params.id,
-
-              userId:
-                request.user.userId,
-            },
+            applied:
+              correctionReview.applied ===
+                true,
           }
-        );
+        : null,
+  };
+}
 
-      if (!hike) {
-        return response
-          .status(404)
-          .json({
-            message:
-              "Finished hike not found.",
-          });
-      }
+router.post("/", requireAuth, async (request, response) => {
+  try {
+    const normalized = normalizeFinishedHike(request.body || {});
+    const validationError = validateFinishedHike(normalized);
 
-      return response
-        .status(200)
-        .json({
-          hike,
-        });
-    } catch (error) {
-      console.error(
-        "Finished hike load failed:",
-        error
-      );
-
-      return response
-        .status(500)
-        .json({
-          message:
-            "Something went wrong while loading the finished hike.",
-        });
+    if (validationError) {
+      return response.status(400).json({ message: validationError });
     }
-  }
-);
 
-router.delete(
-  "/:id",
-  requireAuth,
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const hike =
-        await FinishedHike.findOne(
-          {
-            where: {
-              id:
-                request.params.id,
+    const [hike, created] = await FinishedHike.findOrCreate({
+      where: {
+        id: normalized.id,
+        userId: request.user.userId,
+      },
+      defaults: {
+        ...normalized,
+        userId: request.user.userId,
+      },
+    });
 
-              userId:
-                request.user.userId,
-            },
-          }
-        );
-
-      if (!hike) {
-        return response
-          .status(404)
-          .json({
-            message:
-              "Finished hike not found.",
-          });
-      }
-
-      await hike.destroy();
-
-      return response
-        .status(200)
-        .json({
-          message:
-            "Finished hike deleted successfully!",
-        });
-    } catch (error) {
-      console.error(
-        "Finished hike delete failed:",
-        error
-      );
-
-      return response
-        .status(500)
-        .json({
-          message:
-            "Something went wrong while deleting the finished hike.",
-        });
+    if (!created) {
+      await hike.update(normalized);
     }
+
+    return response.status(created ? 201 : 200).json({
+      message: created
+        ? "Finished hike saved successfully!"
+        : "Finished hike updated successfully!",
+      hike,
+    });
+  } catch (error) {
+    console.error("Finished hike save failed:", error);
+
+    return response.status(500).json({
+      message: "Something went wrong while saving the finished hike.",
+    });
   }
-);
+});
+
+router.get("/", requireAuth, async (request, response) => {
+  try {
+    const hikes = await FinishedHike.findAll({
+      where: {
+        userId: request.user.userId,
+      },
+      order: [["endedAt", "DESC"]],
+    });
+
+    return response.status(200).json({
+      count: hikes.length,
+      hikes,
+    });
+  } catch (error) {
+    console.error("Finished hike list failed:", error);
+
+    return response.status(500).json({
+      message: "Something went wrong while loading finished hikes.",
+    });
+  }
+});
+
+router.post("/:id/ai-recap", requireAuth, async (request, response) => {
+  try {
+    if (!process.env.HF_TOKEN) {
+      return response.status(503).json({
+        message: "AI hike recap is not configured yet.",
+      });
+    }
+
+    const hike = await FinishedHike.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!hike) {
+      return response.status(404).json({
+        message: "Finished hike not found.",
+      });
+    }
+
+    const facts = buildHikeFacts(hike.toJSON());
+
+    const prompt = `
+You are Altipoop AI Hike Recap.
+
+Write a short post-hike recap using ONLY the sanitized hike facts supplied below.
+
+Return ONLY one JSON object with EXACTLY these lowercase keys:
+
+{
+  "headline": "",
+  "summary": "",
+  "highlights": [],
+  "challenges": [],
+  "closing": ""
+}
+
+STRICT RULES:
+
+- Do not use markdown.
+- Do not use code fences.
+- Do not add text before or after the JSON.
+- Keep headline under 10 words.
+- Keep summary to 2 short sentences maximum.
+- Maximum 3 highlights.
+- Maximum 3 challenges.
+- Keep closing to 1 short sentence.
+- Do not invent events, scenery, wildlife, weather, terrain, route conditions, emotions, motives, achievements, locations, or safety conclusions.
+- Do not infer anything from the route title, including whether the route was planned, followed, completed, or reached.
+- Do not claim a summit, destination, or named place was reached unless the supplied facts explicitly establish it.
+- Do not include coordinates.
+- Do not provide medical, rescue, avalanche, climbing, wildlife, or water-safety advice.
+- Do not call the hike safe or unsafe.
+- Do not mention private contact, vehicle, GPS coordinates, or raw breadcrumb data.
+- Do not mention ANY numeric hike statistics in headline, summary, highlights, challenges, or closing. Altipoop displays verified numeric stats separately.
+- Do not say "planned route", "intended path", "completed the route", "completed as planned", "as scheduled", "successfully", or similar language unless a supplied fact explicitly says that.
+- A route title is only a title. It does not establish that the route was planned, followed, completed, or reached.
+- If hasRecordedRouteDeviation is true, you may describe it only as "a recorded route deviation" or "recorded route deviations".
+- If hasRecordedCheckIns is true, you may say only that a check-in or check-ins were recorded.
+- You may describe recorded weather events only by the supplied labels, without adding causes or consequences.
+- You may describe hiker-condition checks only by their supplied level, without interpreting health or safety.
+- If the facts are sparse, keep the recap sparse rather than guessing.
+- "challenges" must be empty when there is no directly recorded challenge fact.
+- "highlights" must be empty when there is no directly recorded highlight fact.
+- The closing must be neutral. Good examples: "The hike ended at the recorded finish time." or "The recording ended with the hike saved."
+- Never transform a statistic into an inferred accomplishment or judgment.
+
+SANITIZED HIKE FACTS:
+
+${JSON.stringify(facts, null, 2)}
+    `.trim();
+
+    const client = new InferenceClient(process.env.HF_TOKEN);
+
+    const completion = await client.chatCompletion({
+      model: "zai-org/GLM-4.5V",
+
+      extra_body: {
+        chat_template_kwargs: {
+          enable_thinking: false,
+        },
+      },
+
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+
+      temperature: 0.1,
+
+      max_tokens: 900,
+    });
+
+    const rawText =
+      completion
+        ?.choices?.[0]
+        ?.message?.content;
+
+    if (!rawText) {
+      return response.status(502).json({
+        message: "Hugging Face returned an empty recap.",
+      });
+    }
+
+    const parsed = extractJson(rawText);
+
+    if (!parsed) {
+      console.error("AI hike recap JSON could not be parsed:", rawText);
+
+      return response.status(502).json({
+        message: "Hugging Face returned an invalid recap.",
+      });
+    }
+
+    const recap = normalizeRecap(parsed);
+
+    if (!recap) {
+      console.error("AI hike recap could not be normalized:", parsed);
+
+      return response.status(502).json({
+        message: "Hugging Face returned an unusable recap.",
+      });
+    }
+
+    return response.status(200).json({
+      provider: "huggingface",
+      hikeId: hike.id,
+      facts,
+      recap,
+    });
+  } catch (error) {
+    console.error("AI hike recap failed:", error);
+
+    return response.status(500).json({
+      message: "Something went wrong while generating the AI hike recap.",
+    });
+  }
+});
+
+router.get("/:id", requireAuth, async (request, response) => {
+  try {
+    const hike = await FinishedHike.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!hike) {
+      return response.status(404).json({
+        message: "Finished hike not found.",
+      });
+    }
+
+    return response.status(200).json({ hike });
+  } catch (error) {
+    console.error("Finished hike load failed:", error);
+
+    return response.status(500).json({
+      message: "Something went wrong while loading the finished hike.",
+    });
+  }
+});
+
+router.delete("/:id", requireAuth, async (request, response) => {
+  try {
+    const hike = await FinishedHike.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!hike) {
+      return response.status(404).json({
+        message: "Finished hike not found.",
+      });
+    }
+
+    await hike.destroy();
+
+    return response.status(200).json({
+      message: "Finished hike deleted successfully!",
+    });
+  } catch (error) {
+    console.error("Finished hike delete failed:", error);
+
+    return response.status(500).json({
+      message: "Something went wrong while deleting the finished hike.",
+    });
+  }
+});
 
 module.exports = router;
