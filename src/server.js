@@ -4,6 +4,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const cors = require("cors");
+const trailPhotoAiRoutes = require("./routes/trailPhotoAiRoutes");
 
 const sequelize = require("./config/database");
 
@@ -55,7 +56,10 @@ app.use(
     },
   })
 );
-
+app.use(
+  "/api/ai",
+  trailPhotoAiRoutes
+);
 app.use(
   express.json({
     limit: "100kb",
