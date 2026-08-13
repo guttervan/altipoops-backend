@@ -8,9 +8,11 @@ const router = express.Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
+
   limits: {
     fileSize: 5 * 1024 * 1024,
   },
+
   fileFilter(request, file, callback) {
     const allowedMimeTypes = [
       "image/jpeg",
@@ -18,7 +20,11 @@ const upload = multer({
       "image/webp",
     ];
 
-    if (!allowedMimeTypes.includes(file.mimetype)) {
+    if (
+      !allowedMimeTypes.includes(
+        file.mimetype
+      )
+    ) {
       const error = new Error(
         "Only JPEG, PNG, and WebP photos are supported."
       );
@@ -32,65 +38,200 @@ const upload = multer({
   },
 });
 
-function extractJson(text) {
-  if (!text) {
+const expectedKeys = [
+  "summary",
+  "terrain",
+  "vegetation",
+  "weather",
+  "trail",
+  "water",
+  "snow",
+  "wildlife",
+  "other",
+  "uncertainties",
+];
+
+function extractJson(rawText) {
+  if (
+    typeof rawText !== "string" ||
+    !rawText.trim()
+  ) {
     return null;
   }
 
-  const trimmed = text.trim();
+  let text = rawText.trim();
 
+  /*
+   * Remove markdown code fences such as:
+   *
+   * ```json
+   * { ... }
+   * ```
+   */
+  text = text
+    .replace(
+      /^```(?:json)?\s*/i,
+      ""
+    )
+    .replace(
+      /\s*```$/,
+      ""
+    )
+    .trim();
+
+  /*
+   * First try the whole response.
+   */
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(text);
   } catch (error) {
-    // Continue below.
-  }
-
-  const fencedMatch = trimmed.match(
-    /```(?:json)?\s*([\s\S]*?)```/i
-  );
-
-  if (fencedMatch) {
-    try {
-      return JSON.parse(
-        fencedMatch[1].trim()
-      );
-    } catch (error) {
-      // Continue below.
-    }
+    // Try extracting only the JSON object.
   }
 
   const firstBrace =
-    trimmed.indexOf("{");
+    text.indexOf("{");
 
   const lastBrace =
-    trimmed.lastIndexOf("}");
+    text.lastIndexOf("}");
 
   if (
-    firstBrace !== -1 &&
-    lastBrace !== -1 &&
-    lastBrace > firstBrace
+    firstBrace === -1 ||
+    lastBrace === -1 ||
+    lastBrace <= firstBrace
   ) {
-    try {
-      return JSON.parse(
-        trimmed.slice(
-          firstBrace,
-          lastBrace + 1
-        )
-      );
-    } catch (error) {
-      return null;
-    }
+    return null;
   }
 
-  return null;
+  const candidate =
+    text.slice(
+      firstBrace,
+      lastBrace + 1
+    );
+
+  try {
+    return JSON.parse(candidate);
+  } catch (error) {
+    return null;
+  }
+}
+
+function findValueCaseInsensitive(
+  object,
+  expectedKey
+) {
+  if (
+    !object ||
+    typeof object !== "object"
+  ) {
+    return undefined;
+  }
+
+  const matchingKey =
+    Object.keys(object).find(
+      (key) =>
+        key
+          .trim()
+          .toLowerCase() ===
+        expectedKey.toLowerCase()
+    );
+
+  if (!matchingKey) {
+    return undefined;
+  }
+
+  return object[matchingKey];
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (item) =>
+        typeof item === "string"
+    )
+    .map(
+      (item) =>
+        item.trim()
+    )
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function normalizeAnalysis(parsed) {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    return null;
+  }
+
+  const normalized = {};
+
+  expectedKeys.forEach(
+    (key) => {
+      const value =
+        findValueCaseInsensitive(
+          parsed,
+          key
+        );
+
+      if (key === "summary") {
+        normalized.summary =
+          typeof value === "string"
+            ? value.trim()
+            : "";
+
+        return;
+      }
+
+      normalized[key] =
+        normalizeStringArray(
+          value
+        );
+    }
+  );
+
+  /*
+   * Make sure the model returned
+   * at least some useful content.
+   */
+  const hasObservations =
+    expectedKeys
+      .filter(
+        (key) =>
+          key !== "summary"
+      )
+      .some(
+        (key) =>
+          normalized[key].length > 0
+      );
+
+  if (
+    !normalized.summary &&
+    !hasObservations
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 router.post(
   "/trail-photo",
   upload.single("photo"),
-  async (request, response, next) => {
+  async (
+    request,
+    response,
+    next
+  ) => {
     try {
-      if (!process.env.HF_TOKEN) {
+      if (
+        !process.env.HF_TOKEN
+      ) {
         return response
           .status(503)
           .json({
@@ -124,12 +265,14 @@ router.post(
       const prompt = `
 You are Altipoop Trail Photo Analysis.
 
-Analyze only what is visibly supported by this backcountry photo.
+Analyze ONLY what is visibly supported by this backcountry photo.
 
-Return ONLY valid JSON using this exact structure:
+Return ONLY one JSON object.
+
+Use EXACTLY these lowercase keys:
 
 {
-  "summary": "1-2 sentence visible summary",
+  "summary": "short visible summary",
   "terrain": [],
   "vegetation": [],
   "weather": [],
@@ -141,28 +284,45 @@ Return ONLY valid JSON using this exact structure:
   "uncertainties": []
 }
 
-Rules:
+STRICT OUTPUT RULES:
 
-- Terrain: visible terrain or landform observations only.
-- Vegetation: visible vegetation observations only.
-- Weather: visible sky, cloud, precipitation, or lighting observations only.
-- Trail: visible trail, path, surface, obstacle, or route-feature observations only.
-- Water: visible water observations only.
-- Snow: visible snow or ice observations only.
+- Do not use markdown.
+- Do not use code fences.
+- Do not add text before or after the JSON.
+- Use all 10 keys.
+- Keep the summary to no more than 2 short sentences.
+- Maximum 3 observations per category.
+- Maximum 15 words per observation.
+- Use empty arrays when nothing useful is visible.
+
+CONTENT RULES:
+
+- Terrain: visible terrain or landforms only.
+- Vegetation: visible vegetation only.
+- Weather: visible sky, clouds, precipitation, lighting, or atmospheric appearance only.
+- Trail: visible trail, path, surface, obstacles, or route features only.
+- Water: visible water only.
+- Snow: visible snow or ice only.
 - Wildlife: visible animals or clear animal evidence only.
-- Other: other useful visible observations.
-- Uncertainties: anything that cannot be confidently determined from the image.
+- Other: other useful visible details.
+- Uncertainties: things that cannot be confidently determined from the photo.
 
-Important:
+SAFETY RULES:
 
-- Do not declare anything safe or unsafe.
-- Do not provide medical, rescue, avalanche, climbing, wildlife, water-purification, or route-safety advice.
-- Do not identify an exact location from scenery.
-- Do not invent elevations, distances, temperatures, weather forecasts, route names, or coordinates.
-- Do not guess a species unless visually distinctive enough to support it.
-- If uncertain, describe the uncertainty.
-- Use empty arrays when there is nothing useful for a category.
-- Keep observations concise.
+- Never declare anything safe or unsafe.
+- Do not give rescue advice.
+- Do not give avalanche advice.
+- Do not give climbing advice.
+- Do not give wildlife safety advice.
+- Do not give water purification advice.
+- Do not give medical advice.
+- Do not identify the exact location from scenery.
+- Do not invent elevation.
+- Do not invent distance.
+- Do not invent temperature.
+- Do not invent coordinates.
+- Do not invent a trail or route name.
+- Do not guess species unless visually distinctive enough to support it.
       `.trim();
 
       const completion =
@@ -173,13 +333,17 @@ Important:
           messages: [
             {
               role: "user",
+
               content: [
                 {
                   type: "text",
                   text: prompt,
                 },
+
                 {
-                  type: "image_url",
+                  type:
+                    "image_url",
+
                   image_url: {
                     url: dataUrl,
                   },
@@ -188,12 +352,14 @@ Important:
             },
           ],
 
-          temperature: 0.2,
-          max_tokens: 900,
+          temperature: 0.1,
+
+          max_tokens: 1400,
         });
 
       const rawText =
-        completion?.choices?.[0]
+        completion
+          ?.choices?.[0]
           ?.message?.content;
 
       if (!rawText) {
@@ -205,20 +371,37 @@ Important:
           });
       }
 
-      const analysis =
+      const parsed =
         extractJson(rawText);
 
-      if (!analysis) {
+      if (!parsed) {
+        console.error(
+          "Hugging Face JSON could not be parsed:",
+          rawText
+        );
+
         return response
           .status(502)
           .json({
             message:
-              "Hugging Face returned a response that could not be parsed.",
-            raw:
-              process.env.NODE_ENV ===
-              "development"
-                ? rawText
-                : undefined,
+              "Hugging Face returned an incomplete or invalid response.",
+          });
+      }
+
+      const analysis =
+        normalizeAnalysis(parsed);
+
+      if (!analysis) {
+        console.error(
+          "Hugging Face response could not be normalized:",
+          parsed
+        );
+
+        return response
+          .status(502)
+          .json({
+            message:
+              "Hugging Face returned an unusable analysis.",
           });
       }
 
@@ -227,6 +410,7 @@ Important:
         .json({
           provider:
             "huggingface",
+
           analysis,
         });
     } catch (error) {
