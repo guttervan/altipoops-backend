@@ -315,6 +315,118 @@ function buildHikeFacts(hike) {
   };
 }
 
+
+function cleanJournalText(value, maxLength = 1200) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().slice(0, maxLength);
+}
+
+function normalizeJournalObservationGroups(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const allowedGroups = [
+    "terrain",
+    "vegetation",
+    "weather",
+    "trail",
+    "water",
+    "snow",
+    "wildlife",
+    "other",
+    "uncertainties",
+  ];
+
+  const normalized = {};
+
+  for (const key of allowedGroups) {
+    if (!Array.isArray(value[key])) {
+      continue;
+    }
+
+    const items = value[key]
+      .filter((item) => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((item) => item.slice(0, 240));
+
+    if (items.length) {
+      normalized[key] = items;
+    }
+  }
+
+  return normalized;
+}
+
+function buildPhotoJournalBlock(body) {
+  const summary = cleanJournalText(body?.summary, 1200);
+  const photoName = cleanJournalText(body?.photoName, 180);
+  const photoUrl = cleanJournalText(body?.photoUrl, 1200);
+  const observations = normalizeJournalObservationGroups(
+    body?.observations
+  );
+
+  if (!summary && Object.keys(observations).length === 0) {
+    return {
+      error:
+        "A visible summary or at least one observation is required.",
+    };
+  }
+
+  if (
+    photoUrl &&
+    !/^https?:\/\//i.test(photoUrl)
+  ) {
+    return {
+      error:
+        "Photo URL must use http or https.",
+    };
+  }
+
+  const recordedAt = new Date().toISOString();
+  const lines = [
+    `[Trail Photo Observation · ${recordedAt}]`,
+  ];
+
+  if (photoName) {
+    lines.push(`Photo: ${photoName}`);
+  }
+
+  if (photoUrl) {
+    lines.push(`Photo URL: ${photoUrl}`);
+  }
+
+  if (summary) {
+    lines.push(`Visible summary: ${summary}`);
+  }
+
+  for (const [group, items] of Object.entries(observations)) {
+    const label =
+      group.charAt(0).toUpperCase() +
+      group.slice(1);
+
+    lines.push(`${label}: ${items.join(" | ")}`);
+  }
+
+  lines.push(
+    "Note: AI-assisted visual observations only; no safety conclusion recorded."
+  );
+
+  return {
+    entry: lines.join("\n"),
+    recordedAt,
+    summary,
+    photoName: photoName || null,
+    photoUrl: photoUrl || null,
+    observations,
+  };
+}
+
 router.post("/", requireAuth, async (request, response) => {
   try {
     const normalized = normalizeFinishedHike(request.body || {});
@@ -372,6 +484,68 @@ router.get("/", requireAuth, async (request, response) => {
 
     return response.status(500).json({
       message: "Something went wrong while loading finished hikes.",
+    });
+  }
+});
+
+
+router.post("/:id/journal-entry", requireAuth, async (request, response) => {
+  try {
+    const hike = await FinishedHike.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!hike) {
+      return response.status(404).json({
+        message: "Finished hike not found.",
+      });
+    }
+
+    const journalEntry = buildPhotoJournalBlock(
+      request.body || {}
+    );
+
+    if (journalEntry.error) {
+      return response.status(400).json({
+        message: journalEntry.error,
+      });
+    }
+
+    const existingSummary =
+      typeof hike.journalSummary === "string"
+        ? hike.journalSummary.trim()
+        : "";
+
+    const nextSummary = existingSummary
+      ? `${existingSummary}\n\n${journalEntry.entry}`
+      : journalEntry.entry;
+
+    await hike.update({
+      journalSummary: nextSummary,
+    });
+
+    return response.status(201).json({
+      message: "Journal entry added successfully!",
+      hikeId: hike.id,
+      journalEntry: {
+        type: "trail-photo-observation",
+        recordedAt: journalEntry.recordedAt,
+        summary: journalEntry.summary,
+        photoName: journalEntry.photoName,
+        photoUrl: journalEntry.photoUrl,
+        observations: journalEntry.observations,
+      },
+      journalSummary: hike.journalSummary,
+    });
+  } catch (error) {
+    console.error("Finished hike journal entry save failed:", error);
+
+    return response.status(500).json({
+      message:
+        "Something went wrong while adding the journal entry.",
     });
   }
 });
