@@ -316,6 +316,61 @@ function buildHikeFacts(hike) {
 }
 
 
+function normalizeFinishedHikePhoto(body) {
+  const url = optionalText(body?.url);
+  const caption = optionalText(body?.caption);
+  const takenAt = optionalText(body?.takenAt);
+  const source = optionalText(body?.source) || "website";
+
+  if (!url) {
+    return {
+      error: "Photo URL is required.",
+    };
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    return {
+      error: "Photo URL must use http or https.",
+    };
+  }
+
+  if (takenAt) {
+    const parsedTakenAt = new Date(takenAt);
+
+    if (Number.isNaN(parsedTakenAt.getTime())) {
+      return {
+        error: "Photo takenAt value is invalid.",
+      };
+    }
+  }
+
+  return {
+    photo: {
+      id:
+        optionalText(body?.id) ||
+        `photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      url: url.slice(0, 1600),
+      caption: caption ? caption.slice(0, 300) : null,
+      takenAt: takenAt || null,
+      source: source.slice(0, 80),
+      addedAt: new Date().toISOString(),
+    },
+  };
+}
+
+function normalizeStoredPhotos(value) {
+  return Array.isArray(value)
+    ? value.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item) &&
+          typeof item.url === "string" &&
+          item.url.trim()
+      )
+    : [];
+}
+
 function cleanJournalText(value, maxLength = 1200) {
   if (typeof value !== "string") {
     return "";
@@ -512,6 +567,144 @@ router.get("/", requireAuth, async (request, response) => {
     });
   }
 });
+
+
+router.post("/:id/photos", requireAuth, async (request, response) => {
+  try {
+    const hike = await FinishedHike.findOne({
+      where: {
+        id: request.params.id,
+        userId: request.user.userId,
+      },
+    });
+
+    if (!hike) {
+      return response.status(404).json({
+        message: "Finished hike not found.",
+      });
+    }
+
+    const normalized = normalizeFinishedHikePhoto(
+      request.body || {}
+    );
+
+    if (normalized.error) {
+      return response.status(400).json({
+        message: normalized.error,
+      });
+    }
+
+    const existingPhotos =
+      normalizeStoredPhotos(hike.photos);
+
+    if (existingPhotos.length >= 50) {
+      return response.status(400).json({
+        message:
+          "This finished hike already has the maximum of 50 photos.",
+      });
+    }
+
+    const duplicate = existingPhotos.some(
+      (photo) =>
+        photo.id === normalized.photo.id ||
+        photo.url === normalized.photo.url
+    );
+
+    if (duplicate) {
+      return response.status(409).json({
+        message:
+          "That photo is already attached to this finished hike.",
+      });
+    }
+
+    const nextPhotos = [
+      ...existingPhotos,
+      normalized.photo,
+    ];
+
+    await hike.update({
+      photos: nextPhotos,
+    });
+
+    return response.status(201).json({
+      message:
+        "Photo attached to finished hike successfully!",
+      hikeId: hike.id,
+      photo: normalized.photo,
+      photos: hike.photos,
+    });
+  } catch (error) {
+    console.error(
+      "Finished hike photo attach failed:",
+      error
+    );
+
+    return response.status(500).json({
+      message:
+        "Something went wrong while attaching the photo.",
+    });
+  }
+});
+
+router.delete(
+  "/:id/photos/:photoId",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const nextPhotos = existingPhotos.filter(
+        (photo) =>
+          photo.id !== request.params.photoId
+      );
+
+      if (
+        nextPhotos.length ===
+        existingPhotos.length
+      ) {
+        return response.status(404).json({
+          message:
+            "Finished hike photo not found.",
+        });
+      }
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message:
+          "Photo removed from finished hike successfully!",
+        hikeId: hike.id,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike photo delete failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while removing the photo.",
+      });
+    }
+  }
+);
 
 
 router.post("/:id/journal-entry", requireAuth, async (request, response) => {
