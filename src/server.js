@@ -272,6 +272,12 @@ async function startServer() {
     );
 
     await sequelize.query(`
+      ALTER TABLE finished_hikes
+      ADD COLUMN IF NOT EXISTS
+      "photos" JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `);
+
+    await sequelize.query(`
       ALTER TABLE water_source_entries
       ADD COLUMN IF NOT EXISTS
       "photoUrl" VARCHAR(255);

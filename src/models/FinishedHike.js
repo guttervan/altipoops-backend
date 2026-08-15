@@ -178,6 +178,13 @@ const FinishedHike =
         allowNull: true,
       },
 
+      photos: {
+        type:
+          DataTypes.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+
       bestMomentId: {
         type:
           DataTypes.STRING,
