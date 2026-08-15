@@ -363,6 +363,31 @@ function normalizeJournalObservationGroups(value) {
   return normalized;
 }
 
+function buildManualJournalBlock(body) {
+  const summary = cleanJournalText(body?.summary, 1200);
+
+  if (!summary) {
+    return {
+      error: "Journal text is required.",
+    };
+  }
+
+  const recordedAt = new Date().toISOString();
+
+  return {
+    entry: [
+      `[Journal Entry · ${recordedAt}]`,
+      summary,
+    ].join("\n"),
+    recordedAt,
+    summary,
+    photoName: null,
+    photoUrl: null,
+    observations: {},
+    type: "manual",
+  };
+}
+
 function buildPhotoJournalBlock(body) {
   const summary = cleanJournalText(body?.summary, 1200);
   const photoName = cleanJournalText(body?.photoName, 180);
@@ -504,9 +529,19 @@ router.post("/:id/journal-entry", requireAuth, async (request, response) => {
       });
     }
 
-    const journalEntry = buildPhotoJournalBlock(
-      request.body || {}
-    );
+const requestBody = request.body || {};
+const entryType =
+  optionalText(requestBody.entryType)?.toLowerCase() || "trail-photo-observation";
+
+console.log("JOURNAL DEBUG:", {
+  entryType,
+  body: requestBody,
+});
+
+const journalEntry =
+  entryType === "manual"
+    ? buildManualJournalBlock(requestBody)
+    : buildPhotoJournalBlock(requestBody);
 
     if (journalEntry.error) {
       return response.status(400).json({
@@ -531,7 +566,10 @@ router.post("/:id/journal-entry", requireAuth, async (request, response) => {
       message: "Journal entry added successfully!",
       hikeId: hike.id,
       journalEntry: {
-        type: "trail-photo-observation",
+        type:
+          journalEntry.type === "manual"
+            ? "manual"
+            : "trail-photo-observation",
         recordedAt: journalEntry.recordedAt,
         summary: journalEntry.summary,
         photoName: journalEntry.photoName,
