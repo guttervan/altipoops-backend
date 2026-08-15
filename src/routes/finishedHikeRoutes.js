@@ -533,10 +533,7 @@ const requestBody = request.body || {};
 const entryType =
   optionalText(requestBody.entryType)?.toLowerCase() || "trail-photo-observation";
 
-console.log("JOURNAL DEBUG:", {
-  entryType,
-  body: requestBody,
-});
+
 
 const journalEntry =
   entryType === "manual"
