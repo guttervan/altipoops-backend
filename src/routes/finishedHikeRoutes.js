@@ -1,10 +1,57 @@
 const express = require("express");
+const multer = require("multer");
 const { InferenceClient } = require("@huggingface/inference");
 
 const FinishedHike = require("../models/FinishedHike");
 const requireAuth = require("../middleware/authMiddleware");
+const cloudinary = require("../config/cloudinary");
 
 const router = express.Router();
+
+const finishedHikePhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+  },
+  fileFilter: (request, file, callback) => {
+    if (
+      file.mimetype === "image/jpeg" ||
+      file.mimetype === "image/png" ||
+      file.mimetype === "image/webp"
+    ) {
+      return callback(null, true);
+    }
+
+    const error = new Error(
+      "Finished hike photos must be JPEG, PNG, or WebP."
+    );
+    error.statusCode = 400;
+    return callback(error);
+  },
+});
+
+function uploadFinishedHikePhotoToCloudinary(file, hikeId) {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: `altipoop/finished-hikes/${hikeId}`,
+        resource_type: "image",
+        overwrite: false,
+        unique_filename: true,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+
+        return resolve(result);
+      }
+    );
+
+    uploadStream.end(file.buffer);
+  });
+}
 
 function optionalText(value) {
   if (value === undefined || value === null) {
@@ -569,6 +616,159 @@ router.get("/", requireAuth, async (request, response) => {
 });
 
 
+router.post(
+  "/:id/photos/upload",
+  requireAuth,
+  finishedHikePhotoUpload.single("photo"),
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      if (!request.file) {
+        return response.status(400).json({
+          message: "A photo file is required.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      if (existingPhotos.length >= 50) {
+        return response.status(400).json({
+          message:
+            "This finished hike already has the maximum of 50 photos.",
+        });
+      }
+
+      const uploadResult =
+        await uploadFinishedHikePhotoToCloudinary(
+          request.file,
+          hike.id
+        );
+
+      if (!uploadResult?.secure_url) {
+        return response.status(502).json({
+          message:
+            "Cloudinary did not return a photo URL.",
+        });
+      }
+
+      const caption =
+        optionalText(request.body?.caption);
+      const takenAt =
+        optionalText(request.body?.takenAt);
+
+      if (takenAt) {
+        const parsedTakenAt =
+          new Date(takenAt);
+
+        if (
+          Number.isNaN(
+            parsedTakenAt.getTime()
+          )
+        ) {
+          if (uploadResult.public_id) {
+            await cloudinary.uploader
+              .destroy(uploadResult.public_id)
+              .catch(() => {});
+          }
+
+          return response.status(400).json({
+            message:
+              "Photo takenAt value is invalid.",
+          });
+        }
+      }
+
+      const photo = {
+        id:
+          `photo-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`,
+        url: uploadResult.secure_url,
+        cloudinaryPublicId:
+          uploadResult.public_id || null,
+        caption:
+          caption
+            ? caption.slice(0, 300)
+            : null,
+        takenAt:
+          takenAt || null,
+        source: "website-upload",
+        originalName:
+          optionalText(
+            request.file.originalname
+          ),
+        width:
+          Number.isFinite(uploadResult.width)
+            ? uploadResult.width
+            : null,
+        height:
+          Number.isFinite(uploadResult.height)
+            ? uploadResult.height
+            : null,
+        format:
+          optionalText(uploadResult.format),
+        bytes:
+          Number.isFinite(uploadResult.bytes)
+            ? uploadResult.bytes
+            : null,
+        addedAt:
+          new Date().toISOString(),
+      };
+
+      const nextPhotos = [
+        ...existingPhotos,
+        photo,
+      ];
+
+      try {
+        await hike.update({
+          photos: nextPhotos,
+        });
+      } catch (databaseError) {
+        if (uploadResult.public_id) {
+          await cloudinary.uploader
+            .destroy(uploadResult.public_id)
+            .catch(() => {});
+        }
+
+        throw databaseError;
+      }
+
+      return response.status(201).json({
+        message:
+          "Photo uploaded and attached to finished hike successfully!",
+        hikeId: hike.id,
+        photo,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike photo upload failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while uploading the photo.",
+      });
+    }
+  }
+);
+
+
 router.post("/:id/photos", requireAuth, async (request, response) => {
   try {
     const hike = await FinishedHike.findOne({
@@ -667,6 +867,12 @@ router.delete(
       const existingPhotos =
         normalizeStoredPhotos(hike.photos);
 
+      const photoToDelete =
+        existingPhotos.find(
+          (photo) =>
+            photo.id === request.params.photoId
+        );
+
       const nextPhotos = existingPhotos.filter(
         (photo) =>
           photo.id !== request.params.photoId
@@ -685,6 +891,19 @@ router.delete(
       await hike.update({
         photos: nextPhotos,
       });
+
+      if (photoToDelete?.cloudinaryPublicId) {
+        try {
+          await cloudinary.uploader.destroy(
+            photoToDelete.cloudinaryPublicId
+          );
+        } catch (cloudinaryError) {
+          console.error(
+            "Cloudinary photo cleanup failed:",
+            cloudinaryError
+          );
+        }
+      }
 
       return response.status(200).json({
         message:
