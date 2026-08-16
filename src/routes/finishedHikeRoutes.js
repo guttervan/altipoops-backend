@@ -846,6 +846,110 @@ router.post("/:id/photos", requireAuth, async (request, response) => {
   }
 });
 
+router.put(
+  "/:id/photos/:photoId/analysis",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const photoIndex = existingPhotos.findIndex(
+        (photo) =>
+          photo.id === request.params.photoId
+      );
+
+      if (photoIndex < 0) {
+        return response.status(404).json({
+          message: "Finished hike photo not found.",
+        });
+      }
+
+      const summary =
+        cleanJournalText(
+          request.body?.summary,
+          1200
+        );
+
+      const observations =
+        normalizeJournalObservationGroups(
+          request.body?.observations
+        );
+
+      if (
+        !summary &&
+        Object.keys(observations).length === 0
+      ) {
+        return response.status(400).json({
+          message:
+            "A visible summary or at least one observation is required.",
+        });
+      }
+
+      const analysis = {
+        summary: summary || null,
+        ...observations,
+        provider:
+          optionalText(
+            request.body?.provider
+          ) || "huggingface",
+        savedAt:
+          new Date().toISOString(),
+        safetyNote:
+          "AI-assisted visual observations only; no safety conclusion recorded.",
+      };
+
+      const updatedPhoto = {
+        ...existingPhotos[photoIndex],
+        analysis,
+      };
+
+      const nextPhotos = [
+        ...existingPhotos,
+      ];
+
+      nextPhotos[photoIndex] =
+        updatedPhoto;
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message:
+          "Trail photo analysis saved successfully!",
+        hikeId: hike.id,
+        photo: updatedPhoto,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike photo analysis save failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while saving the trail photo analysis.",
+      });
+    }
+  }
+);
+
+
 router.delete(
   "/:id/photos/:photoId",
   requireAuth,
