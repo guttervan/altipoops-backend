@@ -950,6 +950,194 @@ router.put(
 );
 
 
+function normalizeCairnCollector(body) {
+  const allowedCategories = [
+    "LEGIT",
+    "QUESTIONABLE",
+    "ABSURD",
+    "MONSTER",
+    "SUMMIT",
+  ];
+
+  const category =
+    optionalText(body?.category)?.toUpperCase() || null;
+
+  if (!category || !allowedCategories.includes(category)) {
+    return {
+      error:
+        "Cairn category must be LEGIT, QUESTIONABLE, ABSURD, MONSTER, or SUMMIT.",
+    };
+  }
+
+  const note = optionalText(body?.note);
+
+  return {
+    cairnCollector: {
+      category,
+      note: note ? note.slice(0, 500) : null,
+      addedAt: new Date().toISOString(),
+    },
+  };
+}
+
+
+router.put(
+  "/:id/photos/:photoId/cairn-collector",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const photoIndex = existingPhotos.findIndex(
+        (photo) =>
+          photo.id === request.params.photoId
+      );
+
+      if (photoIndex < 0) {
+        return response.status(404).json({
+          message: "Finished hike photo not found.",
+        });
+      }
+
+      const normalized =
+        normalizeCairnCollector(request.body || {});
+
+      if (normalized.error) {
+        return response.status(400).json({
+          message: normalized.error,
+        });
+      }
+
+      const updatedPhoto = {
+        ...existingPhotos[photoIndex],
+        cairnCollector: normalized.cairnCollector,
+      };
+
+      const nextPhotos = [
+        ...existingPhotos,
+      ];
+
+      nextPhotos[photoIndex] =
+        updatedPhoto;
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message:
+          "Photo added to Cairn Collector successfully!",
+        hikeId: hike.id,
+        photo: updatedPhoto,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Cairn Collector save failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while adding the photo to Cairn Collector.",
+      });
+    }
+  }
+);
+
+
+router.delete(
+  "/:id/photos/:photoId/cairn-collector",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const photoIndex = existingPhotos.findIndex(
+        (photo) =>
+          photo.id === request.params.photoId
+      );
+
+      if (photoIndex < 0) {
+        return response.status(404).json({
+          message: "Finished hike photo not found.",
+        });
+      }
+
+      if (!existingPhotos[photoIndex].cairnCollector) {
+        return response.status(404).json({
+          message:
+            "That photo is not in the Cairn Collector.",
+        });
+      }
+
+      const updatedPhoto = {
+        ...existingPhotos[photoIndex],
+      };
+
+      delete updatedPhoto.cairnCollector;
+
+      const nextPhotos = [
+        ...existingPhotos,
+      ];
+
+      nextPhotos[photoIndex] =
+        updatedPhoto;
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message:
+          "Photo removed from Cairn Collector successfully!",
+        hikeId: hike.id,
+        photo: updatedPhoto,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Cairn Collector remove failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while removing the photo from Cairn Collector.",
+      });
+    }
+  }
+);
+
+
 router.delete(
   "/:id/photos/:photoId",
   requireAuth,
