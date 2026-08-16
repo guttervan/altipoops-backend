@@ -1154,6 +1154,97 @@ router.put(
 );
 
 
+router.get("/public/cairns", async (request, response) => {
+  try {
+    const hikes = await FinishedHike.findAll({
+      attributes: [
+        "id",
+        "routeTitle",
+        "endedAt",
+        "photos",
+      ],
+      order: [["endedAt", "DESC"]],
+    });
+
+    const cairns = [];
+
+    for (const hike of hikes) {
+      const photos = normalizeStoredPhotos(hike.photos);
+
+      for (const photo of photos) {
+        const collector = photo?.cairnCollector;
+
+        if (
+          !collector ||
+          collector.isPublic !== true
+        ) {
+          continue;
+        }
+
+        cairns.push({
+          id: photo.id,
+          photoUrl: photo.url,
+          caption:
+            typeof photo.caption === "string"
+              ? photo.caption.slice(0, 300)
+              : null,
+          takenAt: photo.takenAt || null,
+          category:
+            typeof collector.category === "string"
+              ? collector.category
+              : null,
+          note:
+            typeof collector.note === "string"
+              ? collector.note.slice(0, 500)
+              : null,
+          addedAt: collector.addedAt || null,
+          hike: {
+            title:
+              typeof hike.routeTitle === "string"
+                ? hike.routeTitle
+                : null,
+            endedAt: hike.endedAt || null,
+          },
+        });
+      }
+    }
+
+    cairns.sort((a, b) => {
+      const aTime = new Date(
+        a.addedAt ||
+        a.takenAt ||
+        a.hike.endedAt ||
+        0
+      ).getTime();
+
+      const bTime = new Date(
+        b.addedAt ||
+        b.takenAt ||
+        b.hike.endedAt ||
+        0
+      ).getTime();
+
+      return bTime - aTime;
+    });
+
+    return response.status(200).json({
+      count: cairns.length,
+      cairns,
+    });
+  } catch (error) {
+    console.error(
+      "Public Cairn Collector gallery load failed:",
+      error
+    );
+
+    return response.status(500).json({
+      message:
+        "Something went wrong while loading the public Cairn Collector gallery.",
+    });
+  }
+});
+
+
 router.delete(
   "/:id/photos/:photoId/cairn-collector",
   requireAuth,
