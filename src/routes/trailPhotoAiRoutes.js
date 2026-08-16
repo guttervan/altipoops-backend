@@ -571,4 +571,271 @@ SAFETY RULES:
   }
 );
 
+
+router.post(
+  "/cairn-photo",
+  upload.single("photo"),
+  async (request, response, next) => {
+    try {
+      if (!process.env.HF_TOKEN) {
+        return response.status(503).json({
+          message: "Cairn photo analysis is not configured yet.",
+        });
+      }
+
+      if (!request.file) {
+        return response.status(400).json({
+          message: "A cairn photo is required.",
+        });
+      }
+
+      const client = new InferenceClient(process.env.HF_TOKEN);
+      const base64Photo = request.file.buffer.toString("base64");
+      const dataUrl =
+        `data:${request.file.mimetype};base64,${base64Photo}`;
+
+      const prompt = `
+You are Altipoop Cairn Field Read.
+
+Report only observations directly supported by pixels in the photograph.
+The hiker alone chooses LEGIT, QUESTIONABLE, ABSURD, MONSTER, or SUMMIT.
+Never choose, validate, recommend, or change that category.
+
+Return ONLY one JSON object with exactly these lowercase keys:
+{
+  "summary": "short visible summary",
+  "formation": [],
+  "visible_stones": [],
+  "structure": [],
+  "scale": [],
+  "terrain_context": [],
+  "surroundings": [],
+  "observations": [],
+  "uncertainties": [],
+  "confidence": "LOW"
+}
+
+RULES:
+- No markdown, code fences, or text outside JSON.
+- Use all keys.
+- Summary maximum 2 short sentences.
+- Maximum 3 items per array and 15 words per item.
+- Empty arrays when unsupported.
+- confidence must be LOW, MEDIUM, or HIGH.
+- Every factual observation must be directly visible.
+
+FORMATION:
+Describe visible arrangement only: stacked, balanced, clustered, column-like,
+pyramidal, irregular, or similar. "Appears deliberately stacked" is allowed
+only when visible placement strongly supports it. Do not infer purpose.
+
+VISIBLE_STONES:
+Give an approximate visible count or range only when reasonably countable.
+If overlap prevents responsible counting, say counting is uncertain.
+
+STRUCTURE:
+Describe visible layers, shape, base width, verticality, balance, or asymmetry.
+Do not assess structural safety.
+
+SCALE:
+Use small, medium, or large only when visible context supports relative scale.
+Otherwise leave empty and mention scale uncertainty. Never invent dimensions.
+
+TERRAIN_CONTEXT:
+Describe directly visible rock, ridge, talus, forest, open ground, trail tread,
+snow, or landforms. Do not infer an exact location, route, or elevation.
+
+SURROUNDINGS:
+Describe visible vegetation, people, signs, structures, other stone stacks,
+snow, water, or objects.
+
+OBSERVATIONS:
+Add concise cairn-specific visible details not covered above.
+
+UNCERTAINTIES:
+Include relevant facts the photo cannot establish, such as official status,
+route meaning, safety to follow, exact location/elevation/dimensions,
+who built it, why it exists, or whether stones moved over time.
+
+Never call a cairn official, legitimate, illegitimate, correct, incorrect,
+safe, unsafe, or route-authoritative.
+Never tell someone to follow, dismantle, move, improve, rebuild, or add rocks.
+      `.trim();
+
+      const completion = await client.chatCompletion({
+        model: "zai-org/GLM-4.5V",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt,
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: dataUrl,
+                },
+              },
+            ],
+          },
+        ],
+        extra_body: {
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
+        },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "cairn_field_read",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "summary",
+                "formation",
+                "visible_stones",
+                "structure",
+                "scale",
+                "terrain_context",
+                "surroundings",
+                "observations",
+                "uncertainties",
+                "confidence",
+              ],
+              properties: {
+                summary: { type: "string" },
+                formation: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                visible_stones: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                structure: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                scale: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                terrain_context: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                surroundings: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                observations: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                uncertainties: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                confidence: {
+                  type: "string",
+                  enum: ["LOW", "MEDIUM", "HIGH"],
+                },
+              },
+            },
+          },
+        },
+        temperature: 0.1,
+        max_tokens: 1800,
+      });
+
+      const rawText =
+        completion?.choices?.[0]?.message?.content;
+
+      if (!rawText) {
+        return response.status(502).json({
+          message: "Hugging Face returned an empty Cairn Field Read.",
+        });
+      }
+
+      const parsed = extractJson(rawText);
+
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        console.error(
+          "Hugging Face Cairn Field Read JSON could not be parsed:",
+          rawText
+        );
+
+        return response.status(502).json({
+          message: "Hugging Face returned an invalid Cairn Field Read.",
+        });
+      }
+
+      const arrayKeys = [
+        "formation",
+        "visible_stones",
+        "structure",
+        "scale",
+        "terrain_context",
+        "surroundings",
+        "observations",
+        "uncertainties",
+      ];
+
+      const summaryValue =
+        findValueCaseInsensitive(parsed, "summary");
+
+      const analysis = {
+        summary:
+          typeof summaryValue === "string"
+            ? summaryValue.trim()
+            : "",
+      };
+
+      arrayKeys.forEach((key) => {
+        analysis[key] = normalizeStringArray(
+          findValueCaseInsensitive(parsed, key)
+        );
+      });
+
+      const confidenceValue =
+        findValueCaseInsensitive(parsed, "confidence");
+
+      const confidence =
+        typeof confidenceValue === "string"
+          ? confidenceValue.trim().toUpperCase()
+          : "LOW";
+
+      analysis.confidence =
+        ["LOW", "MEDIUM", "HIGH"].includes(confidence)
+          ? confidence
+          : "LOW";
+
+      const hasObservations =
+        arrayKeys.some((key) => analysis[key].length > 0);
+
+      if (!analysis.summary && !hasObservations) {
+        return response.status(502).json({
+          message: "Hugging Face returned an unusable Cairn Field Read.",
+        });
+      }
+
+      return response.status(200).json({
+        provider: "huggingface",
+        analysis,
+      });
+    } catch (error) {
+      console.error("Cairn Field Read failed:", error);
+      next(error);
+    }
+  }
+);
+
 module.exports = router;
