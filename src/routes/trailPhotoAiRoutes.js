@@ -394,9 +394,98 @@ SAFETY RULES:
             },
           ],
 
+          extra_body: {
+            chat_template_kwargs: {
+              enable_thinking: false,
+            },
+          },
+
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "trail_photo_analysis",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: [
+                  "summary",
+                  "terrain",
+                  "vegetation",
+                  "weather",
+                  "trail",
+                  "water",
+                  "snow",
+                  "wildlife",
+                  "other",
+                  "uncertainties",
+                ],
+                properties: {
+                  summary: {
+                    type: "string",
+                  },
+                  terrain: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  vegetation: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  weather: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  trail: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  water: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  snow: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  wildlife: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  other: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  uncertainties: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                },
+              },
+            },
+          },
+
           temperature: 0.1,
 
-          max_tokens: 1400,
+          max_tokens: 2200,
         });
 
       const rawText =
@@ -405,6 +494,22 @@ SAFETY RULES:
           ?.message?.content;
 
       if (!rawText) {
+        console.error(
+          "Hugging Face returned no visible content:",
+          JSON.stringify(
+            {
+              finishReason:
+                completion?.choices?.[0]?.finish_reason || null,
+              reasoningContent:
+                completion?.choices?.[0]?.message?.reasoning_content || null,
+              message:
+                completion?.choices?.[0]?.message || null,
+            },
+            null,
+            2
+          )
+        );
+
         return response
           .status(502)
           .json({
