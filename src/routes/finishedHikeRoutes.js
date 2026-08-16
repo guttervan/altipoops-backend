@@ -1040,6 +1040,8 @@ router.put(
             normalized.cairnCollector.addedAt,
           updatedAt:
             new Date().toISOString(),
+          fieldRead:
+            existingCairnCollector?.fieldRead || null,
         },
       };
 
@@ -1071,6 +1073,125 @@ router.put(
       return response.status(500).json({
         message:
           "Something went wrong while adding the photo to Cairn Collector.",
+      });
+    }
+  }
+);
+
+
+router.put(
+  "/:id/photos/:photoId/cairn-collector/field-read",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const photoIndex = existingPhotos.findIndex(
+        (photo) =>
+          photo.id === request.params.photoId
+      );
+
+      if (photoIndex < 0) {
+        return response.status(404).json({
+          message: "Finished hike photo not found.",
+        });
+      }
+
+      const existingCairnCollector =
+        existingPhotos[photoIndex].cairnCollector;
+
+      if (
+        !existingCairnCollector ||
+        typeof existingCairnCollector !== "object"
+      ) {
+        return response.status(404).json({
+          message:
+            "That photo is not in the Cairn Collector.",
+        });
+      }
+
+      if (existingCairnCollector.fieldRead) {
+        return response.status(200).json({
+          message:
+            "Cairn Field Read was already saved.",
+          hikeId: hike.id,
+          photo: existingPhotos[photoIndex],
+          fieldRead:
+            existingCairnCollector.fieldRead,
+        });
+      }
+
+      const analysis =
+        normalizeObject(request.body?.analysis);
+
+      if (!analysis) {
+        return response.status(400).json({
+          message:
+            "A Cairn Field Read analysis object is required.",
+        });
+      }
+
+      const fieldRead = {
+        analysis,
+        provider:
+          optionalText(request.body?.provider) ||
+          "huggingface",
+        model:
+          optionalText(request.body?.model),
+        savedAt:
+          new Date().toISOString(),
+      };
+
+      const updatedPhoto = {
+        ...existingPhotos[photoIndex],
+        cairnCollector: {
+          ...existingCairnCollector,
+          fieldRead,
+        },
+      };
+
+      const nextPhotos = [
+        ...existingPhotos,
+      ];
+
+      nextPhotos[photoIndex] =
+        updatedPhoto;
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message:
+          "Cairn Field Read saved successfully!",
+        hikeId: hike.id,
+        photo: updatedPhoto,
+        fieldRead,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Cairn Field Read save failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while saving the Cairn Field Read.",
       });
     }
   }
@@ -1214,6 +1335,11 @@ router.get("/public/cairns", async (request, response) => {
               ? collector.note.slice(0, 500)
               : null,
           addedAt: collector.addedAt || null,
+          fieldRead:
+            collector.fieldRead &&
+            typeof collector.fieldRead === "object"
+              ? collector.fieldRead
+              : null,
           hike: {
             title:
               typeof hike.routeTitle === "string"
