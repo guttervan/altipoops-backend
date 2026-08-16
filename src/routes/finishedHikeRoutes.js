@@ -1023,9 +1023,24 @@ router.put(
         });
       }
 
+      const existingCairnCollector =
+        existingPhotos[photoIndex].cairnCollector &&
+        typeof existingPhotos[photoIndex].cairnCollector === "object"
+          ? existingPhotos[photoIndex].cairnCollector
+          : null;
+
       const updatedPhoto = {
         ...existingPhotos[photoIndex],
-        cairnCollector: normalized.cairnCollector,
+        cairnCollector: {
+          ...normalized.cairnCollector,
+          isPublic:
+            existingCairnCollector?.isPublic === true,
+          addedAt:
+            existingCairnCollector?.addedAt ||
+            normalized.cairnCollector.addedAt,
+          updatedAt:
+            new Date().toISOString(),
+        },
       };
 
       const nextPhotos = [
@@ -1040,8 +1055,9 @@ router.put(
       });
 
       return response.status(200).json({
-        message:
-          "Photo added to Cairn Collector successfully!",
+        message: existingCairnCollector
+          ? "Cairn Collector specimen updated successfully!"
+          : "Photo added to Cairn Collector successfully!",
         hikeId: hike.id,
         photo: updatedPhoto,
         photos: hike.photos,
