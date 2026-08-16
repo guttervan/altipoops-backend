@@ -41,6 +41,30 @@ const allowedOrigins = [
   "http://127.0.0.1:8081",
 ];
 
+function isAllowedOrigin(origin) {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+
+    if (
+      url.protocol === "https:" &&
+      (
+        url.hostname.endsWith(".framer.website") ||
+        url.hostname.endsWith(".framer.app")
+      )
+    ) {
+      return true;
+    }
+  } catch (error) {
+    return false;
+  }
+
+  return false;
+}
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -48,9 +72,13 @@ app.use(
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
+
+      console.error(
+        `CORS rejected origin: ${origin}`
+      );
 
       return callback(
         new Error("Origin not allowed by CORS.")
