@@ -975,6 +975,7 @@ function normalizeCairnCollector(body) {
     cairnCollector: {
       category,
       note: note ? note.slice(0, 500) : null,
+      isPublic: false,
       addedAt: new Date().toISOString(),
     },
   };
@@ -1054,6 +1055,99 @@ router.put(
       return response.status(500).json({
         message:
           "Something went wrong while adding the photo to Cairn Collector.",
+      });
+    }
+  }
+);
+
+
+router.put(
+  "/:id/photos/:photoId/cairn-collector/visibility",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike = await FinishedHike.findOne({
+        where: {
+          id: request.params.id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const existingPhotos =
+        normalizeStoredPhotos(hike.photos);
+
+      const photoIndex = existingPhotos.findIndex(
+        (photo) =>
+          photo.id === request.params.photoId
+      );
+
+      if (photoIndex < 0) {
+        return response.status(404).json({
+          message: "Finished hike photo not found.",
+        });
+      }
+
+      const existingCairnCollector =
+        existingPhotos[photoIndex].cairnCollector;
+
+      if (!existingCairnCollector) {
+        return response.status(404).json({
+          message:
+            "That photo is not in the Cairn Collector.",
+        });
+      }
+
+      if (typeof request.body?.isPublic !== "boolean") {
+        return response.status(400).json({
+          message:
+            "Cairn Collector visibility requires an isPublic boolean.",
+        });
+      }
+
+      const updatedPhoto = {
+        ...existingPhotos[photoIndex],
+        cairnCollector: {
+          ...existingCairnCollector,
+          isPublic: request.body.isPublic,
+          visibilityUpdatedAt:
+            new Date().toISOString(),
+        },
+      };
+
+      const nextPhotos = [
+        ...existingPhotos,
+      ];
+
+      nextPhotos[photoIndex] =
+        updatedPhoto;
+
+      await hike.update({
+        photos: nextPhotos,
+      });
+
+      return response.status(200).json({
+        message: request.body.isPublic
+          ? "Cairn Collector specimen shared publicly."
+          : "Cairn Collector specimen set to private.",
+        hikeId: hike.id,
+        photo: updatedPhoto,
+        photos: hike.photos,
+      });
+    } catch (error) {
+      console.error(
+        "Cairn Collector visibility update failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while updating Cairn Collector visibility.",
       });
     }
   }
