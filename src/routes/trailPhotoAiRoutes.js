@@ -401,86 +401,7 @@ SAFETY RULES:
           },
 
           response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "trail_photo_analysis",
-              strict: true,
-              schema: {
-                type: "object",
-                additionalProperties: false,
-                required: [
-                  "summary",
-                  "terrain",
-                  "vegetation",
-                  "weather",
-                  "trail",
-                  "water",
-                  "snow",
-                  "wildlife",
-                  "other",
-                  "uncertainties",
-                ],
-                properties: {
-                  summary: {
-                    type: "string",
-                  },
-                  terrain: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  vegetation: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  weather: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  trail: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  water: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  snow: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  wildlife: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  other: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                  uncertainties: {
-                    type: "array",
-                    items: {
-                      type: "string",
-                    },
-                  },
-                },
-              },
-            },
+            type: "json_object",
           },
 
           temperature: 0.1,
@@ -687,66 +608,7 @@ Never tell someone to follow, dismantle, move, improve, rebuild, or add rocks.
           },
         },
         response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "cairn_field_read",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              required: [
-                "summary",
-                "formation",
-                "visible_stones",
-                "structure",
-                "scale",
-                "terrain_context",
-                "surroundings",
-                "observations",
-                "uncertainties",
-                "confidence",
-              ],
-              properties: {
-                summary: { type: "string" },
-                formation: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                visible_stones: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                structure: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                scale: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                terrain_context: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                surroundings: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                observations: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                uncertainties: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                confidence: {
-                  type: "string",
-                  enum: ["LOW", "MEDIUM", "HIGH"],
-                },
-              },
-            },
-          },
+          type: "json_object",
         },
         temperature: 0.1,
         max_tokens: 1800,
