@@ -14,6 +14,7 @@ require("./models/CatholeEntry");
 require("./models/WaterSourceEntry");
 require("./models/BeerSpotEntry");
 require("./models/FinishedHike");
+require("./models/PublicTrack");
 
 const authRoutes = require("./routes/authRoutes");
 const catholeRoutes = require("./routes/catholeRoutes");
