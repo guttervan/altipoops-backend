@@ -1,8 +1,10 @@
 const express = require("express");
 const multer = require("multer");
 const { InferenceClient } = require("@huggingface/inference");
+const crypto = require("crypto");
 
 const FinishedHike = require("../models/FinishedHike");
+const PublicTrack = require("../models/PublicTrack");
 const requireAuth = require("../middleware/authMiddleware");
 const cloudinary = require("../config/cloudinary");
 
@@ -1757,6 +1759,779 @@ ${JSON.stringify(facts, null, 2)}
     });
   }
 });
+
+function clampPublicText(value, maxLength = 180) {
+  const textValue = optionalText(value);
+  return textValue ? textValue.slice(0, maxLength) : null;
+}
+
+function normalizePublicTerrainTags(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .filter((item) => typeof item === "string")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 12)
+      .map((item) => item.slice(0, 40))
+  )];
+}
+
+function normalizePublicSignalCounts(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const allowed = [
+    "water",
+    "snow",
+    "wildlife",
+    "trail",
+    "deadfall",
+    "mud",
+    "ice",
+    "wind",
+    "smoke",
+    "other",
+  ];
+
+  const counts = {};
+
+  for (const key of allowed) {
+    const count = Number(value[key]);
+
+    if (Number.isFinite(count) && count > 0) {
+      counts[key] = Math.min(999, Math.round(count));
+    }
+  }
+
+  return counts;
+}
+
+function normalizePublicObservations(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        !Array.isArray(item)
+    )
+    .slice(0, 20)
+    .map((item) => ({
+      type:
+        clampPublicText(item.type, 40) || "other",
+      label:
+        clampPublicText(item.label, 280),
+      confidence:
+        Number.isFinite(Number(item.confidence))
+          ? Math.max(0, Math.min(1, Number(item.confidence)))
+          : null,
+    }))
+    .filter((item) => item.label);
+}
+
+function normalizePublicPhotos(hike, selectedPhotoIds) {
+  if (!Array.isArray(selectedPhotoIds) || selectedPhotoIds.length === 0) {
+    return [];
+  }
+
+  const selected = new Set(
+    selectedPhotoIds
+      .filter((id) => typeof id === "string")
+      .slice(0, 12)
+  );
+
+  return normalizeStoredPhotos(hike.photos)
+    .filter((photo) => selected.has(photo.id))
+    .map((photo) => ({
+      id: photo.id,
+      url: photo.url,
+      caption:
+        typeof photo.caption === "string"
+          ? photo.caption.slice(0, 300)
+          : null,
+      takenAt: photo.takenAt || null,
+    }));
+}
+
+function readCoordinatePoint(value) {
+  if (!value) {
+    return null;
+  }
+
+  let latitude = null;
+  let longitude = null;
+  let elevation = null;
+
+  if (Array.isArray(value)) {
+    if (value.length < 2) {
+      return null;
+    }
+
+    const first = Number(value[0]);
+    const second = Number(value[1]);
+
+    if (!Number.isFinite(first) || !Number.isFinite(second)) {
+      return null;
+    }
+
+    if (Math.abs(first) > 90 && Math.abs(second) <= 90) {
+      longitude = first;
+      latitude = second;
+    } else if (Math.abs(second) > 90 && Math.abs(first) <= 90) {
+      latitude = first;
+      longitude = second;
+    } else {
+      latitude = first;
+      longitude = second;
+    }
+
+    const possibleElevation = Number(value[2]);
+
+    if (Number.isFinite(possibleElevation)) {
+      elevation = possibleElevation;
+    }
+  } else if (typeof value === "object") {
+    latitude = Number(
+      value.latitude ??
+      value.lat
+    );
+
+    longitude = Number(
+      value.longitude ??
+      value.lng ??
+      value.lon
+    );
+
+    const possibleElevation = Number(
+      value.elevation ??
+      value.altitude ??
+      value.ele
+    );
+
+    if (Number.isFinite(possibleElevation)) {
+      elevation = possibleElevation;
+    }
+  }
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  ) {
+    return null;
+  }
+
+  return {
+    latitude,
+    longitude,
+    elevation,
+  };
+}
+
+function extractFinishedHikeTrackPoints(hike) {
+  const candidateSets = [
+    hike.routeCoordinates,
+    hike.breadcrumbPoints,
+    hike.routeEntry?.coordinates,
+    hike.routeEntry?.routeCoordinates,
+    hike.routeEntry?.points,
+  ];
+
+  for (const candidate of candidateSets) {
+    if (!Array.isArray(candidate)) {
+      continue;
+    }
+
+    const points =
+      candidate
+        .map(readCoordinatePoint)
+        .filter(Boolean);
+
+    if (points.length >= 2) {
+      return points;
+    }
+  }
+
+  return [];
+}
+
+function haversineMiles(a, b) {
+  const earthRadiusMiles = 3958.7613;
+  const toRadians = (degrees) => degrees * Math.PI / 180;
+
+  const lat1 = toRadians(a.latitude);
+  const lat2 = toRadians(b.latitude);
+  const deltaLat = toRadians(b.latitude - a.latitude);
+  const deltaLon = toRadians(b.longitude - a.longitude);
+
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLon = Math.sin(deltaLon / 2);
+
+  const h =
+    sinLat * sinLat +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      sinLon *
+      sinLon;
+
+  return 2 * earthRadiusMiles * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function cumulativeTrackMiles(points) {
+  const cumulative = [0];
+
+  for (let index = 1; index < points.length; index += 1) {
+    cumulative[index] =
+      cumulative[index - 1] +
+      haversineMiles(points[index - 1], points[index]);
+  }
+
+  return cumulative;
+}
+
+function trimTrackByMiles(points, startTrimMiles, endTrimMiles) {
+  if (points.length < 2) {
+    return [];
+  }
+
+  const cumulative = cumulativeTrackMiles(points);
+  const totalMiles = cumulative[cumulative.length - 1];
+
+  if (
+    totalMiles <= 0 ||
+    startTrimMiles + endTrimMiles >= totalMiles
+  ) {
+    return points;
+  }
+
+  const startTarget = startTrimMiles;
+  const endTarget = totalMiles - endTrimMiles;
+
+  const trimmed = points.filter(
+    (_, index) =>
+      cumulative[index] >= startTarget &&
+      cumulative[index] <= endTarget
+  );
+
+  return trimmed.length >= 2 ? trimmed : points;
+}
+
+function downsamplePoints(points, maxPoints) {
+  if (points.length <= maxPoints) {
+    return points;
+  }
+
+  const sampled = [];
+
+  for (let index = 0; index < maxPoints; index += 1) {
+    const sourceIndex = Math.round(
+      index * (points.length - 1) / (maxPoints - 1)
+    );
+
+    sampled.push(points[sourceIndex]);
+  }
+
+  return sampled;
+}
+
+function sanitizeTrackGeometry(points, privacyMode) {
+  if (points.length < 2) {
+    return {
+      geometry: [],
+      startTrimMiles: 0,
+      endTrimMiles: 0,
+      locationPrecision: "none",
+    };
+  }
+
+  if (privacyMode === "full") {
+    return {
+      geometry: points.map((point) => [
+        point.longitude,
+        point.latitude,
+      ]),
+      startTrimMiles: 0,
+      endTrimMiles: 0,
+      locationPrecision: "exact",
+    };
+  }
+
+  const startTrimMiles =
+    privacyMode === "corridor" ? 0.75 : 0.5;
+
+  const endTrimMiles =
+    privacyMode === "corridor" ? 0.75 : 0.5;
+
+  const trimmed =
+    trimTrackByMiles(
+      points,
+      startTrimMiles,
+      endTrimMiles
+    );
+
+  const sampled =
+    downsamplePoints(
+      trimmed,
+      privacyMode === "corridor" ? 60 : 180
+    );
+
+  const decimalPlaces =
+    privacyMode === "corridor" ? 3 : 4;
+
+  return {
+    geometry:
+      sampled.map((point) => [
+        Number(point.longitude.toFixed(decimalPlaces)),
+        Number(point.latitude.toFixed(decimalPlaces)),
+      ]),
+    startTrimMiles,
+    endTrimMiles,
+    locationPrecision:
+      privacyMode === "corridor"
+        ? "corridor"
+        : "generalized",
+  };
+}
+
+function buildPublicElevationProfile(points, distanceMiles) {
+  const elevationPoints =
+    points.filter(
+      (point) =>
+        Number.isFinite(point.elevation)
+    );
+
+  if (elevationPoints.length < 2) {
+    return [];
+  }
+
+  const sampled =
+    downsamplePoints(elevationPoints, 60);
+
+  const cumulative =
+    cumulativeTrackMiles(sampled);
+
+  const measuredMiles =
+    cumulative[cumulative.length - 1];
+
+  return sampled.map((point, index) => {
+    const mile =
+      measuredMiles > 0
+        ? cumulative[index]
+        : (
+            Number(distanceMiles) || 0
+          ) * index / Math.max(1, sampled.length - 1);
+
+    return [
+      Number(mile.toFixed(2)),
+      Math.round(point.elevation),
+    ];
+  });
+}
+
+function publicElevationExtremes(points) {
+  const elevations =
+    points
+      .map((point) => point.elevation)
+      .filter(Number.isFinite);
+
+  if (!elevations.length) {
+    return {
+      highPointFt: null,
+      lowPointFt: null,
+    };
+  }
+
+  return {
+    highPointFt: Math.max(...elevations),
+    lowPointFt: Math.min(...elevations),
+  };
+}
+
+function publicTrackResponse(track) {
+  return {
+    publicId: track.publicId,
+    sourceHikeId: track.sourceHikeId,
+    title: track.title,
+    sharedAt: track.sharedAt,
+    activityDate: track.activityDate,
+    privacyMode: track.privacyMode,
+    publicPointCount: track.publicPointCount,
+    startTrimMiles: track.startTrimMiles,
+    endTrimMiles: track.endTrimMiles,
+    locationPrecision: track.locationPrecision,
+    distanceMiles: track.distanceMiles,
+    elevationGainFt: track.elevationGainFt,
+    elevationLossFt: track.elevationLossFt,
+    highPointFt: track.highPointFt,
+    lowPointFt: track.lowPointFt,
+    movingTimeSeconds: track.movingTimeSeconds,
+    elapsedTimeSeconds: track.elapsedTimeSeconds,
+    region: track.region,
+    terrainTags: track.terrainTags,
+    fieldSignalCounts: track.fieldSignalCounts,
+    publicObservations: track.publicObservations,
+    publicPhotos: track.publicPhotos,
+    elevationProfile: track.elevationProfile,
+    isAnonymous: track.isAnonymous,
+    displayName:
+      track.isAnonymous
+        ? null
+        : track.displayName,
+    status: track.status,
+  };
+}
+
+router.post(
+  "/:id/public-track",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike =
+        await FinishedHike.findOne({
+          where: {
+            id: request.params.id,
+            userId: request.user.userId,
+          },
+        });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const privacyMode =
+        optionalText(
+          request.body?.privacyMode
+        )?.toLowerCase() || "masked";
+
+      if (
+        ![
+          "corridor",
+          "masked",
+          "full",
+        ].includes(privacyMode)
+      ) {
+        return response.status(400).json({
+          message:
+            "privacyMode must be corridor, masked, or full.",
+        });
+      }
+
+      if (
+        privacyMode === "full" &&
+        request.body?.confirmExactRoute !== true
+      ) {
+        return response.status(400).json({
+          message:
+            "Publishing an exact route requires confirmExactRoute: true.",
+        });
+      }
+
+      const sourcePoints =
+        extractFinishedHikeTrackPoints(hike);
+
+      if (sourcePoints.length < 2) {
+        return response.status(400).json({
+          message:
+            "This finished hike does not contain enough route points to publish.",
+        });
+      }
+
+      const sanitized =
+        sanitizeTrackGeometry(
+          sourcePoints,
+          privacyMode
+        );
+
+      const elevation =
+        publicElevationExtremes(
+          sourcePoints
+        );
+
+      const isAnonymous =
+        request.body?.isAnonymous !== false;
+
+      const title =
+        clampPublicText(
+          request.body?.title,
+          140
+        ) ||
+        clampPublicText(
+          hike.routeTitle,
+          140
+        );
+
+      const terrainTags =
+        normalizePublicTerrainTags(
+          request.body?.terrainTags
+        );
+
+      const fieldSignalCounts =
+        normalizePublicSignalCounts(
+          request.body?.fieldSignalCounts
+        );
+
+      const publicObservations =
+        normalizePublicObservations(
+          request.body?.publicObservations
+        );
+
+      const publicPhotos =
+        normalizePublicPhotos(
+          hike,
+          request.body?.publicPhotoIds
+        );
+
+      const elevationProfile =
+        buildPublicElevationProfile(
+          sourcePoints,
+          hike.distanceMiles
+        );
+
+      const endedAt =
+        hike.endedAt
+          ? new Date(hike.endedAt)
+          : new Date();
+
+      const activityDate =
+        Number.isNaN(endedAt.getTime())
+          ? new Date().toISOString().slice(0, 10)
+          : endedAt.toISOString().slice(0, 10);
+
+      const now =
+        new Date();
+
+      let publicTrack =
+        await PublicTrack.findOne({
+          where: {
+            sourceHikeId: hike.id,
+          },
+        });
+
+      const values = {
+        title,
+        sharedAt: now,
+        activityDate,
+        privacyMode,
+        geometry: sanitized.geometry,
+        originalPointCount: sourcePoints.length,
+        publicPointCount: sanitized.geometry.length,
+        startTrimMiles: sanitized.startTrimMiles,
+        endTrimMiles: sanitized.endTrimMiles,
+        locationPrecision: sanitized.locationPrecision,
+        distanceMiles:
+          Number(hike.distanceMiles) || 0,
+        elevationGainFt:
+          Number.isFinite(Number(hike.elevationGainFeet))
+            ? Number(hike.elevationGainFeet)
+            : null,
+        elevationLossFt:
+          optionalNumber(request.body?.elevationLossFt),
+        highPointFt:
+          elevation.highPointFt,
+        lowPointFt:
+          elevation.lowPointFt,
+        movingTimeSeconds:
+          Number.isFinite(Number(hike.movingDurationSeconds))
+            ? Math.round(Number(hike.movingDurationSeconds))
+            : null,
+        elapsedTimeSeconds:
+          Number.isFinite(Number(hike.durationSeconds))
+            ? Math.round(Number(hike.durationSeconds))
+            : null,
+        startedAtPublic:
+          privacyMode === "corridor"
+            ? null
+            : hike.startedAt,
+        region:
+          clampPublicText(
+            request.body?.region,
+            120
+          ),
+        terrainTags,
+        fieldSignalCounts,
+        publicObservations,
+        publicPhotos,
+        elevationProfile,
+        isAnonymous,
+        displayName:
+          isAnonymous
+            ? null
+            : clampPublicText(
+                request.body?.displayName,
+                80
+              ),
+        status: "active",
+      };
+
+      if (publicTrack) {
+        await publicTrack.update(values);
+      } else {
+        publicTrack =
+          await PublicTrack.create({
+            id:
+              `public-track-${crypto.randomUUID()}`,
+            publicId:
+              `pub-${crypto.randomUUID()}`,
+            sourceHikeId: hike.id,
+            userId: request.user.userId,
+            ...values,
+          });
+      }
+
+      return response.status(200).json({
+        message:
+          publicTrack.createdAt?.getTime?.() ===
+          publicTrack.updatedAt?.getTime?.()
+            ? "Finished hike published to Public Activity."
+            : "Public Activity track updated.",
+        publicTrack:
+          publicTrackResponse(publicTrack),
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike public-track publish failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while publishing the finished hike.",
+      });
+    }
+  }
+);
+
+router.get(
+  "/:id/public-track",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike =
+        await FinishedHike.findOne({
+          where: {
+            id: request.params.id,
+            userId: request.user.userId,
+          },
+
+          attributes: [
+            "id",
+            "routeTitle",
+          ],
+        });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const publicTrack =
+        await PublicTrack.findOne({
+          where: {
+            sourceHikeId: hike.id,
+            userId: request.user.userId,
+          },
+        });
+
+      if (!publicTrack) {
+        return response.status(200).json({
+          hikeId: hike.id,
+          published: false,
+          publicTrack: null,
+        });
+      }
+
+      return response.status(200).json({
+        hikeId: hike.id,
+        published:
+          publicTrack.status === "active",
+        publicTrack:
+          publicTrackResponse(publicTrack),
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike public-track status load failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while loading Public Activity status.",
+      });
+    }
+  }
+);
+
+
+router.delete(
+  "/:id/public-track",
+  requireAuth,
+  async (request, response) => {
+    try {
+      const hike =
+        await FinishedHike.findOne({
+          where: {
+            id: request.params.id,
+            userId: request.user.userId,
+          },
+        });
+
+      if (!hike) {
+        return response.status(404).json({
+          message: "Finished hike not found.",
+        });
+      }
+
+      const publicTrack =
+        await PublicTrack.findOne({
+          where: {
+            sourceHikeId: hike.id,
+            userId: request.user.userId,
+          },
+        });
+
+      if (!publicTrack) {
+        return response.status(404).json({
+          message:
+            "This finished hike is not published to Public Activity.",
+        });
+      }
+
+      await publicTrack.update({
+        status: "hidden",
+      });
+
+      return response.status(200).json({
+        message:
+          "Finished hike removed from Public Activity.",
+        publicId: publicTrack.publicId,
+        status: publicTrack.status,
+      });
+    } catch (error) {
+      console.error(
+        "Finished hike public-track unpublish failed:",
+        error
+      );
+
+      return response.status(500).json({
+        message:
+          "Something went wrong while removing the finished hike from Public Activity.",
+      });
+    }
+  }
+);
+
 
 router.get("/:id", requireAuth, async (request, response) => {
   try {
