@@ -15,6 +15,7 @@ require("./models/WaterSourceEntry");
 require("./models/BeerSpotEntry");
 require("./models/FinishedHike");
 require("./models/PublicTrack");
+require("./models/CairnEntry");
 
 const authRoutes = require("./routes/authRoutes");
 const catholeRoutes = require("./routes/catholeRoutes");
@@ -28,6 +29,7 @@ const hikingRouteRoutes = require("./routes/hikingRouteRoutes");
 const trailheadRoutes = require("./routes/trailheadRoutes");
 const publicFeedRoutes = require("./routes/publicFeedRoutes");
 const finishedHikeRoutes = require("./routes/finishedHikeRoutes");
+const cairnRoutes = require("./routes/cairnRoutes");
 
 const app = express();
 
@@ -123,6 +125,11 @@ app.use(
 app.use(
   "/api/water-sources",
   waterSourceRoutes
+);
+
+app.use(
+  "/api/cairns",
+  cairnRoutes
 );
 
 app.use(

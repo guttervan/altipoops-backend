@@ -6,6 +6,9 @@ const {
 const WaterSourceEntry =
   require("../models/WaterSourceEntry");
 
+const CairnEntry =
+  require("../models/CairnEntry");
+
 const PublicTrack =
   require("../models/PublicTrack");
 
@@ -28,6 +31,26 @@ function publicCoordinate(value) {
   // the exact private GPS point on the public website.
   return Number(
     numberValue.toFixed(3)
+  );
+}
+
+
+function publicCairnCoordinate(value) {
+  const numberValue =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      numberValue
+    )
+  ) {
+    return null;
+  }
+
+  // Cairns are more sensitive than ordinary field observations.
+  // Round to roughly kilometer-scale precision for the public site.
+  return Number(
+    numberValue.toFixed(2)
   );
 }
 
@@ -348,7 +371,27 @@ router.get(
           limit: 50,
         });
 
-      const items =
+      const cairns =
+        await CairnEntry.findAll({
+          where: {
+            isPublic: true,
+
+            locationMode: {
+              [Op.ne]: "private",
+            },
+          },
+
+          order: [
+            [
+              "collectedAt",
+              "DESC",
+            ],
+          ],
+
+          limit: 50,
+        });
+
+      const waterItems =
         waterSources.map(
           (entry) => ({
             id:
@@ -407,6 +450,85 @@ router.get(
               entry.updatedAt,
           })
         );
+
+      const cairnItems =
+        cairns.map(
+          (entry) => ({
+            id:
+              `cairn-${entry.id}`,
+
+            type:
+              "cairn",
+
+            category:
+              entry.category,
+
+            hikeTitle:
+              entry.hikeTitle ||
+              null,
+
+            elevationFeet:
+              entry.elevationFeet ===
+              null
+                ? null
+                : Number(
+                    entry.elevationFeet
+                  ),
+
+            note:
+              entry.note ||
+              null,
+
+            photoUrl:
+              publicPhotoUrl(
+                request,
+                entry.photoUrl
+              ),
+
+            locationMode:
+              entry.locationMode,
+
+            location: {
+              latitude:
+                publicCairnCoordinate(
+                  entry.latitude
+                ),
+
+              longitude:
+                publicCairnCoordinate(
+                  entry.longitude
+                ),
+            },
+
+            collectedAt:
+              entry.collectedAt,
+
+            createdAt:
+              entry.createdAt,
+
+            updatedAt:
+              entry.updatedAt,
+          })
+        );
+
+      const items = [
+        ...waterItems,
+        ...cairnItems,
+      ]
+        .sort(
+          (a, b) =>
+            Date.parse(
+              b.collectedAt ||
+              b.createdAt ||
+              ""
+            ) -
+            Date.parse(
+              a.collectedAt ||
+              a.createdAt ||
+              ""
+            )
+        )
+        .slice(0, 100);
 
       response
         .status(200)
@@ -474,8 +596,28 @@ router.get(
           limit: 100,
         });
 
+      const publicCairnCount =
+        await CairnEntry.count({
+          where: {
+            isPublic: true,
+
+            locationMode: {
+              [Op.ne]: "private",
+            },
+
+            collectedAt: {
+              [Op.gte]: cutoff,
+            },
+          },
+        });
+
       const signalTotals =
         {};
+
+      if (publicCairnCount > 0) {
+        signalTotals.cairn =
+          publicCairnCount;
+      }
 
       let totalMiles =
         0;
